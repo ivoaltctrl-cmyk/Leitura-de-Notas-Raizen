@@ -1,6 +1,6 @@
 {
-  "name": "Gestão de Abastecimento & Drive",
-  "description": "Envio de notas de abastecimento para o Google Drive com extração automática OCR via IA e visualização em planilha com registros detalhados.",
+  "name": "WFS - Envio de Comprovantes",
+  "description": "Envio direto de fotos de notas e comprovantes de abastecimento para o Google Drive.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

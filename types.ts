@@ -1,0 +1,29 @@
+export interface AbastecimentoRecord {
+  id: string;
+  numero?: string;
+  fotoBase64?: string;
+  fotoMimeType?: string;
+  fileName: string;
+  fileSize?: number;
+  driveFileId?: string;
+  driveFileUrl?: string;
+  dataCriacao: string;
+  statusEnvio: 'enviado_drive' | 'pendente' | 'erro';
+  statusMsg?: string;
+  // Optional historical/metadata fields if present:
+  formaPagamento?: string;
+  cliente?: string;
+  horaChegada?: string;
+  inicioAbastecimento?: string;
+  terminoAbastecimento?: string;
+  produto?: string;
+  volume?: string;
+  obs?: string;
+  assinaturaCliente?: string;
+}
+
+export interface GasConfig {
+  webhookUrl: string;
+  folderId?: string;
+  autoUploadToDrive: boolean;
+}
