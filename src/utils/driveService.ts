@@ -41,7 +41,7 @@ export async function uploadImageToGoogleDrive(
     assinaturaCliente: metadata?.assinaturaCliente || '',
   };
 
-  // Try via server proxy to guarantee CORS freedom
+  // Try via server proxy first (for backend fullstack)
   try {
     const proxyRes = await fetch('/api/upload-drive-proxy', {
       method: 'POST',
@@ -52,25 +52,48 @@ export async function uploadImageToGoogleDrive(
       }),
     });
 
-    const result = await proxyRes.json();
-    if (result && (result.sucesso || result.fileId || result.status === 'ok')) {
-      const fileId = result.fileId || result.id || '';
-      return {
-        sucesso: true,
-        mensagem: result.mensagem || 'Arquivo salvo com sucesso no Google Drive!',
-        fileId: fileId,
-        driveUrl: fileId ? `https://drive.google.com/file/d/${fileId}/view` : undefined,
-      };
-    } else {
-      return {
-        sucesso: false,
-        mensagem: result.mensagem || result.error || 'Falha ao salvar no Google Drive.',
-      };
+    const text = await proxyRes.text();
+    if (proxyRes.ok && text) {
+      try {
+        const result = JSON.parse(text);
+        if (result && (result.sucesso || result.fileId || result.status === 'ok')) {
+          const fileId = result.fileId || result.id || '';
+          return {
+            sucesso: true,
+            mensagem: result.mensagem || 'Arquivo salvo com sucesso no Google Drive!',
+            fileId: fileId,
+            driveUrl: fileId ? `https://drive.google.com/file/d/${fileId}/view` : undefined,
+          };
+        } else if (result) {
+          return {
+            sucesso: false,
+            mensagem: result.mensagem || result.error || 'Falha ao salvar no Google Drive.',
+          };
+        }
+      } catch {
+        // Fallback to direct call below
+      }
     }
-  } catch (error: any) {
+  } catch (proxyError: any) {
+    console.warn('Proxy upload failed, attempting direct fetch:', proxyError.message);
+  }
+
+  // Fallback: Direct call from browser to Google Apps Script Web App
+  try {
+    const directRes = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      mode: 'no-cors', // Apps Script standard client bypass
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Envio disparado diretamente para o Google Apps Script!',
+    };
+  } catch (directError: any) {
     return {
       sucesso: false,
-      mensagem: `Erro na comunicação com o Drive: ${error.message}`,
+      mensagem: `Erro na comunicação com o Google Drive: ${directError.message}`,
     };
   }
 }

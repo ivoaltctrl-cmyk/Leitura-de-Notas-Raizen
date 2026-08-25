@@ -23,6 +23,7 @@ export interface GasConfig {
   webhookUrl: string;
   folderId?: string;
   autoUploadToDrive: boolean;
+  geminiApiKey?: string;
 }
 
 export interface ExtractedReceiptData {

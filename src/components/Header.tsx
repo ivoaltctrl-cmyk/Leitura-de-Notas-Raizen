@@ -1,5 +1,6 @@
 import React from 'react';
-import { Camera, FileSpreadsheet, Settings, HardDrive, Fuel, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Camera, FileSpreadsheet, Settings, HardDrive, CheckCircle2, AlertCircle } from 'lucide-react';
+import { WfsLogo } from './WfsLogo';
 
 interface HeaderProps {
   activeTab: 'upload' | 'spreadsheet';
@@ -21,16 +22,20 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo and title */}
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center text-white shadow-sm">
-              <Fuel className="w-6 h-6" />
+          <div className="flex items-center space-x-3.5">
+            {/* WFS Official Typography Logo */}
+            <div className="flex items-center cursor-pointer py-1" onClick={() => setActiveTab('upload')}>
+              <WfsLogo className="h-9 w-auto" />
             </div>
+
+            <div className="h-7 w-px bg-neutral-300 hidden sm:block"></div>
+
             <div>
               <div className="flex items-center space-x-2">
-                <h1 className="text-lg font-bold text-neutral-900 leading-tight">
-                  Controle de Abastecimento & Google Drive
+                <h1 className="text-base sm:text-lg font-bold text-neutral-900 leading-tight">
+                  Controle de Abastecimento
                 </h1>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200">
                   OCR IA + Drive
                 </span>
               </div>

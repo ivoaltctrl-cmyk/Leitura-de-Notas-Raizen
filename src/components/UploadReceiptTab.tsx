@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig, ExtractedReceiptData } from '../types';
 import { compressImage, uploadImageToGoogleDrive } from '../utils/driveService';
+import { extractReceiptData } from '../utils/receiptExtractor';
 
 interface UploadReceiptTabProps {
   gasConfig: GasConfig;
@@ -191,18 +192,10 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
     setExtractSuccess(false);
 
     try {
-      const res = await fetch('/api/extract-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          base64: imageObj.base64,
-          mimeType: imageObj.mimeType,
-        }),
-      });
+      const result = await extractReceiptData(imageObj.base64, imageObj.mimeType, gasConfig.geminiApiKey);
 
-      const json = await res.json();
-      if (json.sucesso && json.dados) {
-        const d = json.dados;
+      if (result.sucesso && result.dados) {
+        const d = result.dados;
         setFormData({
           numero: d.numero || '',
           formaPagamento: d.formaPagamento || 'CONTRATO',
@@ -217,10 +210,10 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
         });
         setExtractSuccess(true);
       } else {
-        setErrorMsg(json.error || 'Não foi possível extrair dados automaticamente. Você pode preencher manualmente.');
+        setErrorMsg(result.error || 'Não foi possível extrair dados automaticamente. Você pode preencher manualmente.');
       }
     } catch (err: any) {
-      setErrorMsg(`Erro na extração inteligente: ${err.message}`);
+      setErrorMsg(`Erro na extração inteligente: ${err.message || 'Falha ao processar nota.'}`);
     } finally {
       setIsExtracting(false);
     }

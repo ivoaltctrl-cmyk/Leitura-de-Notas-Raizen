@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 140" width="100%" height="100%">
+  <!-- "wfs" Bold Lowercase Typography Only -->
+  <g fill="#E31B23">
+    <!-- w -->
+    <path d="M18,30 L40,94 L62,30 L84,30 L106,94 L128,30 L152,30 L122,114 L98,114 L76,55 L54,114 L30,114 L0,30 Z" />
+    
+    <!-- f -->
+    <path d="M166,46 L166,30 L188,30 L188,46 L210,46 L210,64 L188,64 L188,114 L166,114 L166,64 L152,64 L152,46 Z" />
+    <path d="M188,30 C188,16 198,6 214,6 L224,6 L224,24 L214,24 C208,24 204,27 204,34 L204,46 L188,46 Z" />
+
+    <!-- s -->
+    <path d="M255,30 C274,30 286,40 288,54 L266,58 C264,50 258,47 252,47 C244,47 238,50 238,57 C238,64 245,67 258,72 C278,79 289,87 289,101 C289,116 274,124 254,124 C234,124 220,114 218,98 L240,93 C241,102 248,106 255,106 C264,106 270,101 270,95 C270,87 262,83 248,78 C230,71 219,64 219,50 C219,37 234,30 255,30 Z" />
+  </g>
+
+  <!-- "A SATS COMPANY" Subtitle -->
+  <text 
+    x="6" 
+    y="136" 
+    fill="#E31B23" 
+    font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" 
+    font-weight="800" 
+    font-size="22" 
+    letter-spacing="4.5"
+  >A SATS COMPANY</text>
+</svg>

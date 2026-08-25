@@ -16,6 +16,7 @@ export const GasConfigModal: React.FC<GasConfigModalProps> = ({
   onSaveConfig,
 }) => {
   const [webhookUrl, setWebhookUrl] = useState(config.webhookUrl || '');
+  const [geminiApiKey, setGeminiApiKey] = useState(config.geminiApiKey || '');
   const [autoUpload, setAutoUpload] = useState(config.autoUploadToDrive ?? true);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ sucesso: boolean; mensagem: string } | null>(null);
@@ -27,6 +28,7 @@ export const GasConfigModal: React.FC<GasConfigModalProps> = ({
   const handleSave = () => {
     onSaveConfig({
       webhookUrl: webhookUrl.trim(),
+      geminiApiKey: geminiApiKey.trim(),
       autoUploadToDrive: autoUpload,
     });
     onClose();
@@ -311,6 +313,25 @@ function doPost(e) {
               />
               <div className="w-11 h-6 bg-neutral-300 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
             </label>
+          </div>
+
+          {/* Gemini API Key (Optional for static hosts like Cloudflare Pages) */}
+          <div className="space-y-2 p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
+            <label className="block text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center justify-between">
+              <span>Chave da API Gemini (Opcional / Hospedagens Estáticas)</span>
+              <span className="text-[10px] font-normal text-neutral-500 lowercase">Para Cloudflare Pages / Vercel</span>
+            </label>
+            <input
+              id="input-gemini-key"
+              type="password"
+              value={geminiApiKey}
+              onChange={(e) => setGeminiApiKey(e.target.value)}
+              placeholder="AIzaSy..."
+              className="w-full px-3.5 py-2 text-sm border border-neutral-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-red-500 focus:border-red-500 font-mono text-neutral-800"
+            />
+            <p className="text-[11px] text-neutral-500">
+              Se você hospedar o site em ambiente estático sem servidor Node (ex: Cloudflare Pages / Pages.dev), informe sua chave gratuita do Google AI Studio para ativar o OCR com IA diretamente pelo navegador.
+            </p>
           </div>
 
           {/* Step by step guide */}
