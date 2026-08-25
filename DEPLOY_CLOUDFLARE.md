@@ -10,14 +10,16 @@ Node rodando o tempo todo.
 Rotas convertidas:
 - `functions/api/health.ts` → `GET /api/health`
 - `functions/api/fetch-sheet-records.ts` → `POST /api/fetch-sheet-records` (a que estava dando 405)
-- `functions/api/extract-receipt.ts` → `POST /api/extract-receipt`
-- `functions/api/process-receipt-flow.ts` → `POST /api/process-receipt-flow`
 - `functions/api/test-google-integration.ts` → `POST /api/test-google-integration`
 - `functions/api/upload-drive-proxy.ts` → `POST /api/upload-drive-proxy`
 
-O `server.ts` original continua no projeto e funcionando normalmente para
-`npm run dev` (desenvolvimento local) — ele não é mais usado no deploy do
-Cloudflare Pages.
+O `server.ts` continua no projeto e funcionando normalmente para `npm run dev`
+(desenvolvimento local) — ele não é mais usado no deploy do Cloudflare Pages.
+
+**Removido de propósito:** a extração de dados por IA (Gemini) que existia em
+`/api/extract-receipt` e `/api/process-receipt-flow` foi retirada do código.
+O app agora só envia a foto crua pro Google Drive via Apps Script — a leitura
+dos dados da nota é feita fora deste projeto.
 
 ## Passo a passo no Cloudflare Pages
 
@@ -30,7 +32,6 @@ Cloudflare Pages.
 
 2. **Variáveis de ambiente** (Settings → Environment variables), tanto em
    Production quanto em Preview:
-   - `GEMINI_API_KEY` → sua chave da API Gemini
    - `GOOGLE_APPS_SCRIPT_URL` → a URL do Web App do Apps Script (a mesma que
      está em Configurações no painel)
 

@@ -1,15 +1,5 @@
 import { AbastecimentoRecord } from '../types';
 
-export interface ProcessReceiptFlowResult {
-  sucesso: boolean;
-  mensagem: string;
-  record?: AbastecimentoRecord;
-  driveSuccess?: boolean;
-  driveFileId?: string;
-  driveUrl?: string;
-  sheetRowIndex?: number;
-}
-
 export interface UploadDriveResult {
   sucesso: boolean;
   mensagem: string;
@@ -155,12 +145,13 @@ export async function fetchRecordsFromSheet(webhookUrl?: string): Promise<FetchS
 
     if (directRes.ok) {
       const json = await directRes.json();
-      if (json && json.records && Array.isArray(json.records)) {
+      const recs = Array.isArray(json?.records) ? json.records : Array.isArray(json) ? json : null;
+      if (recs) {
         return {
           sucesso: true,
           mensagem: 'Dados carregados da planilha com sucesso!',
-          records: json.records,
-          total: json.records.length,
+          records: recs,
+          total: recs.length,
         };
       }
     }
@@ -174,61 +165,6 @@ export async function fetchRecordsFromSheet(webhookUrl?: string): Promise<FetchS
     records: [],
     total: 0,
   };
-}
-
-/**
- * Main Full-Stack Pipeline:
- * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini 3.7) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ FRONT (Espelho)
- */
-export async function processReceiptPipeline(
-  base64DataUrl: string,
-  fileName: string,
-  mimeType: string = 'image/jpeg',
-  webhookUrl?: string,
-  manualData?: Partial<AbastecimentoRecord>
-): Promise<ProcessReceiptFlowResult> {
-  const targetWebhookUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
-  const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
-
-  try {
-    const response = await fetch('/api/process-receipt-flow', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        base64: cleanBase64,
-        mimeType: mimeType,
-        fileName: fileName,
-        webhookUrl: targetWebhookUrl,
-        manualData: manualData,
-      }),
-    });
-
-    const result = await response.json();
-    if (response.ok && result && result.sucesso) {
-      return {
-        sucesso: true,
-        mensagem: result.mensagem || 'Comprovante processado com sucesso!',
-        record: result.record,
-        driveSuccess: result.driveSuccess,
-        driveFileId: result.driveFileId,
-        driveUrl: result.driveFileUrl,
-        sheetRowIndex: result.sheetRowIndex,
-      };
-    } else {
-      return {
-        sucesso: false,
-        mensagem: result?.mensagem || 'Falha ao processar comprovante no servidor.',
-      };
-    }
-  } catch (error: any) {
-    console.error('Erro na chamada do fluxo /api/process-receipt-flow:', error);
-    return {
-      sucesso: false,
-      mensagem: `Erro de conexão com o servidor: ${error.message || 'Verifique sua conexão.'}`,
-    };
-  }
 }
 
 /**
