@@ -119,7 +119,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
   };
 
   /**
-   * FLUXO INTELIGENTE COM IA GEMINI 3.7 + GOOGLE DRIVE + GOOGLE SHEETS (DADOS_RAIZEN)
+   * FLUXO INTELIGENTE: ENVIO DIRETO AO GOOGLE APPS SCRIPT (DRIVE + SHEETS COM OCR)
    */
   const handleExecuteAiAndDriveUpload = async () => {
     if (!selectedImage) {
@@ -127,27 +127,51 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
       return;
     }
 
+    if (!gasConfig.webhookUrl) {
+      setErrorMsg('Por favor, conecte a URL do Webhook do Google Apps Script antes de enviar.');
+      return;
+    }
+
     setIsProcessingPipeline(true);
     setErrorMsg(null);
-    setPipelineStep('Extraindo 10 colunas com IA Gemini 3.7 Vision & salvando no Drive...');
+    setPipelineStep('Enviando para o Google Drive e gravando na planilha Dados_Raizen...');
 
     try {
-      const result = await processReceiptPipeline(
+      const uploadResult = await uploadImageToGoogleDrive(
+        gasConfig.webhookUrl,
         selectedImage.dataUrl,
         selectedImage.fileName,
-        selectedImage.mimeType,
-        gasConfig.webhookUrl
+        selectedImage.mimeType
       );
 
-      if (result.sucesso && result.record) {
-        onAddRecord(result.record);
-        setLastSavedRecord(result.record);
+      if (uploadResult.sucesso) {
+        const dummyRecord: AbastecimentoRecord = {
+          id: `rec-${Date.now()}`,
+          numero: selectedImage.fileName.replace(/\.[^/.]+$/, ''),
+          formaPagamento: 'CONTRATO',
+          cliente: 'ORBITAL SERV AUX TRANSP AEREO',
+          horaChegada: '',
+          inicioAbastecimento: '',
+          terminoAbastecimento: '',
+          produto: 'DIESEL',
+          volume: '0,00',
+          obs: '',
+          assinaturaCliente: '',
+          fileName: selectedImage.fileName,
+          driveFileUrl: uploadResult.driveUrl,
+          dataCriacao: new Date().toISOString(),
+          statusEnvio: 'enviado_drive',
+          statusMsg: uploadResult.mensagem || 'Foto salva no Google Drive e linha registrada na planilha Dados_Raizen!',
+        };
+
+        onAddRecord(dummyRecord);
+        setLastSavedRecord(dummyRecord);
         setSelectedImage(null);
       } else {
-        setErrorMsg(result.mensagem || 'Falha ao processar nota.');
+        setErrorMsg(uploadResult.mensagem || 'Falha ao enviar comprovante para o Google Drive.');
       }
     } catch (err: any) {
-      setErrorMsg(`Erro ao processar nota: ${err.message}`);
+      setErrorMsg(`Erro ao processar envio: ${err.message}`);
     } finally {
       setIsProcessingPipeline(false);
       setPipelineStep('');
@@ -419,18 +443,18 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                   {isProcessingPipeline ? (
                     <>
                       <RefreshCw className="w-5 h-5 animate-spin" />
-                      <span>{pipelineStep || 'Processando com IA e salvando...'}</span>
+                      <span>{pipelineStep || 'Enviando para o Google Drive...'}</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-5 h-5 text-amber-300" />
-                      <span>Extrair Dados com IA & Salvar no Google Drive</span>
+                      <HardDrive className="w-5 h-5" />
+                      <span>Salvar Foto no Google Drive & Planilha</span>
                     </>
                   )}
                 </button>
 
                 <p className="text-center text-[11px] text-neutral-500">
-                  ⚡ O modelo Gemini 3.7 Vision extrai automaticamente as 10 colunas da nota (OS, Cliente, Horários, Volume e Assinatura).
+                  ⚡ Salva na pasta <code>Comprovantes_Raizen</code> do Google Drive e registra a linha na aba <code>Dados_Raizen</code>.
                 </p>
               </div>
             </div>
