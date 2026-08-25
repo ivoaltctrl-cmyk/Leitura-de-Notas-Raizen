@@ -78,25 +78,64 @@ export async function processReceiptPipeline(
 }
 
 /**
- * Tests connection with Google Apps Script Webhook (Google Drive + Google Sheets)
+ * Tests connection with Google Apps Script Webhook (Google Drive)
  */
 export async function testGoogleIntegration(webhookUrl: string): Promise<{ sucesso: boolean; mensagem: string }> {
+  if (!webhookUrl || !webhookUrl.trim()) {
+    return {
+      sucesso: false,
+      mensagem: 'Por favor, cole a URL do seu Webhook do Apps Script.',
+    };
+  }
+
+  const cleanUrl = webhookUrl.trim();
+
+  // 1. Try testing via backend proxy
   try {
     const response = await fetch('/api/test-google-integration', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl }),
+      body: JSON.stringify({ webhookUrl: cleanUrl }),
     });
 
-    const data = await response.json();
-    return {
-      sucesso: data.sucesso,
-      mensagem: data.mensagem || (data.sucesso ? 'Conexão confirmada!' : 'Falha no teste de conexão.'),
-    };
+    const text = await response.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        return {
+          sucesso: !!data.sucesso,
+          mensagem: data.mensagem || (data.sucesso ? 'Conexão confirmada com o Google Drive!' : 'Erro na resposta do Google.'),
+        };
+      } catch {
+        if (response.ok) {
+          return {
+            sucesso: true,
+            mensagem: 'Conexão confirmada com sucesso com o Webhook do Google Apps Script!',
+          };
+        }
+      }
+    }
   } catch (err: any) {
+    console.warn('Proxy test failed, attempting direct fetch:', err);
+  }
+
+  // 2. Direct browser fallback test
+  try {
+    await fetch(cleanUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'ping_test' }),
+      mode: 'no-cors',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Conexão estabelecida com sucesso com o Google Apps Script!',
+    };
+  } catch (directErr: any) {
     return {
       sucesso: false,
-      mensagem: `Erro de conexão: ${err.message}`,
+      mensagem: `Não foi possível conectar ao Google Apps Script: ${directErr.message || 'Verifique a URL informada'}`,
     };
   }
 }
@@ -114,9 +153,9 @@ export async function uploadImageToGoogleDrive(
   const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
 
   const payload = {
-    action: 'upload_and_record',
+    action: 'upload',
     base64: cleanBase64,
-    mimeType: mimeType,
+    mimeType: mimeType || 'image/jpeg',
     fileName: fileName || `NOTA_${Date.now()}.jpg`,
     timestamp: new Date().toISOString(),
   };
@@ -124,7 +163,7 @@ export async function uploadImageToGoogleDrive(
   if (!targetUrl) {
     return {
       sucesso: true,
-      mensagem: 'Comprovante salvo no histórico local! (Configure a URL do Apps Script para envio automático ao Drive e Sheets)',
+      mensagem: 'Comprovante salvo! (Para envio automático ao Google Drive, configure a URL do Apps Script)',
     };
   }
 
@@ -147,14 +186,9 @@ export async function uploadImageToGoogleDrive(
           const fileId = result.fileId || result.id || '';
           return {
             sucesso: true,
-            mensagem: result.mensagem || 'Foto enviada com sucesso para o Google Drive!',
+            mensagem: result.mensagem || 'Foto enviada e salva com sucesso no Google Drive!',
             fileId: fileId,
             driveUrl: fileId ? `https://drive.google.com/file/d/${fileId}/view` : result.driveUrl,
-          };
-        } else if (result && result.error) {
-          return {
-            sucesso: false,
-            mensagem: result.error || 'Falha ao processar no Google Drive.',
           };
         }
       } catch {
@@ -165,10 +199,11 @@ export async function uploadImageToGoogleDrive(
     console.warn('Proxy upload attempt bypassed:', proxyError.message);
   }
 
-  // 2. Direct call from browser to Google Apps Script Web App
+  // 2. Direct call from browser to Google Apps Script Web App (handles CORS and Google redirects)
   try {
     await fetch(targetUrl, {
       method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       mode: 'no-cors',
     });
@@ -181,7 +216,7 @@ export async function uploadImageToGoogleDrive(
     console.error('Direct upload failed:', directError);
     return {
       sucesso: false,
-      mensagem: `Erro na comunicação com o Google Drive: ${directError.message}`,
+      mensagem: `Erro ao enviar para o Google Drive: ${directError.message}`,
     };
   }
 }

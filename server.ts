@@ -354,9 +354,9 @@ app.post('/api/test-google-integration', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Erro ao testar integração Google:', error);
-    res.status(500).json({
+    res.json({
       sucesso: false,
-      mensagem: `Erro ao conectar com Google Apps Script: ${error.message}`,
+      mensagem: `Erro ao conectar com Google Apps Script: ${error.message || 'Verifique a URL informada'}`,
     });
   }
 });
