@@ -105,15 +105,6 @@ export default function App() {
     setRecords(newRecords);
   };
 
-  const handleClearAllRecords = () => {
-    setRecords([]);
-    try {
-      localStorage.removeItem(STORAGE_KEY_RECORDS);
-    } catch (e) {
-      console.error('Erro ao limpar localStorage:', e);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col font-sans antialiased selection:bg-red-500 selection:text-white">
       {/* Top Navigation */}
@@ -148,8 +139,6 @@ export default function App() {
           <SettingsTab
             gasConfig={gasConfig}
             onSaveConfig={handleSaveGasConfig}
-            onClearAllRecords={handleClearAllRecords}
-            recordsCount={records.length}
           />
         )}
       </main>
