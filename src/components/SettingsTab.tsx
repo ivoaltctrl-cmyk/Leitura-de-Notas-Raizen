@@ -15,6 +15,8 @@ import {
   Trash2,
   FileSpreadsheet,
   AlertTriangle,
+  Users,
+  Globe,
 } from 'lucide-react';
 import { GasConfig, AbastecimentoRecord } from '../types';
 import { testGoogleIntegration, fetchRecordsFromSheet } from '../utils/driveService';
@@ -156,7 +158,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       webhookUrl: webhookUrl.trim(),
     });
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setTimeout(() => setSaveSuccess(false), 4000);
   };
 
   const handleCopyCode = async () => {
@@ -211,7 +213,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </div>
             <h2 className="text-lg font-bold text-neutral-900">Acesso Restrito - Administrador</h2>
             <p className="text-xs text-neutral-500 max-w-xs mx-auto">
-              Digite a senha de administrador para acessar as configurações de integração, limpeza de dados e parâmetros do sistema.
+              Digite a senha de administrador para acessar as configurações de integração, sincronização multi-PC e parâmetros do sistema.
             </p>
           </div>
 
@@ -248,34 +250,32 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </form>
 
           <div className="text-center pt-2 border-t border-neutral-100">
-            <span className="text-[11px] text-neutral-400">
-              Senha padrão inicial: <code className="bg-neutral-100 px-1.5 py-0.5 rounded text-neutral-700 font-mono">admin</code>
-            </span>
+            <p className="text-[11px] text-neutral-400">
+              Senha padrão inicial: <code className="bg-neutral-100 text-neutral-700 px-1.5 py-0.5 rounded-md font-mono font-bold">admin</code>
+            </p>
           </div>
         </div>
       </div>
     );
   }
 
-  // 2. Authenticated Admin Settings View
+  // 2. Unlocked Settings Dashboard
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12 animate-fadeIn">
-      {/* Top Admin Header */}
-      <div className="bg-white rounded-2xl border border-neutral-200 p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-11 h-11 rounded-xl bg-neutral-900 text-white flex items-center justify-center shrink-0 shadow-xs">
-            <Shield className="w-6 h-6 text-red-500" />
+    <div className="max-w-4xl mx-auto space-y-6 pb-8">
+      {/* Top Header with Multi-PC Status & Logout */}
+      <div className="flex items-center justify-between bg-white rounded-2xl border border-neutral-200 shadow-xs p-4 sm:p-5">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center font-bold shadow-xs">
+            <Shield className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-neutral-900">Painel de Configurações Administrativas</h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                ADM Ativo
+            <h2 className="text-base sm:text-lg font-bold text-neutral-900 flex items-center gap-2">
+              <span>Painel de Administração</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                Sessão Ativa
               </span>
-            </div>
-            <p className="text-xs text-neutral-500">
-              Gerenciamento de credenciais, Webhook Google Apps Script e segurança.
-            </p>
+            </h2>
+            <p className="text-xs text-neutral-500">Configurações globais com replicação instantânea para todos os operadores.</p>
           </div>
         </div>
 
@@ -286,13 +286,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Key className="w-3.5 h-3.5" />
-            <span>{showPasswordChange ? 'Ocultar Senha' : 'Trocar Senha ADM'}</span>
+            <span className="hidden sm:inline">Trocar Senha</span>
           </button>
 
           <button
             type="button"
             onClick={handleLogout}
-            className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-red-200"
+            className="px-3 py-2 bg-neutral-100 hover:bg-red-50 text-neutral-700 hover:text-red-600 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-neutral-200"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Sair</span>
@@ -300,51 +300,73 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </div>
 
-      {/* Change Password Card (Collapsible) */}
+      {/* Multi-PC Sync Explanatory Card */}
+      <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 text-white rounded-2xl p-5 shadow-sm space-y-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center font-bold">
+            <Globe className="w-4 h-4" />
+          </div>
+          <h3 className="text-sm font-bold text-white">Sincronização Multi-Computadores Ativa</h3>
+        </div>
+        <p className="text-xs text-neutral-300 leading-relaxed">
+          Ao salvar a URL do Webhook do Google Apps Script abaixo, a configuração é armazenada no <strong>Servidor Central</strong>. Qualquer operador que abrir o aplicativo em qualquer computador, tablet ou celular terá acesso automático ao mesmo Google Drive e verá a mesma planilha atualizada em tempo real.
+        </p>
+      </div>
+
+      {/* Password Change Form Modal/Box */}
       {showPasswordChange && (
-        <div className="bg-neutral-50 border border-neutral-300 rounded-2xl p-5 space-y-4 animate-fadeIn">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
+        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-6 space-y-4 animate-fadeIn">
+          <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
             <Key className="w-4 h-4 text-red-600" />
-            Alterar Senha de Administrador
+            Alterar Senha do Administrador
           </h3>
 
-          <form onSubmit={handleChangePassword} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="text-[11px] font-bold text-neutral-600 block mb-1">Nova Senha</label>
+          <form onSubmit={handleChangePassword} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-neutral-700 block">Nova Senha</label>
               <input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Mínimo 3 caracteres"
-                className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-neutral-300 focus:border-red-500 outline-hidden"
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-neutral-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-hidden"
               />
             </div>
-            <div>
-              <label className="text-[11px] font-bold text-neutral-600 block mb-1">Confirmar Nova Senha</label>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-neutral-700 block">Confirmar Nova Senha</label>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Repita a senha"
-                className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-neutral-300 focus:border-red-500 outline-hidden"
+                placeholder="Repita a nova senha"
+                className="w-full px-3.5 py-2 text-xs rounded-xl border border-neutral-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-hidden"
               />
             </div>
-            <div className="flex items-end">
+
+            <div className="sm:col-span-2 flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowPasswordChange(false)}
+                className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
               <button
                 type="submit"
-                className="w-full py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
-                Atualizar Senha
+                Salvar Nova Senha
               </button>
             </div>
           </form>
 
           {passwordChangeMsg && (
             <div
-              className={`p-2.5 rounded-lg text-xs font-medium flex items-center gap-2 ${
+              className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
                 passwordChangeMsg.type === 'success'
-                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                  : 'bg-red-100 text-red-800 border border-red-300'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'bg-red-50 text-red-800 border border-red-200'
               }`}
             >
               {passwordChangeMsg.type === 'success' ? (
@@ -409,7 +431,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </button>
           </div>
           <p className="text-[11px] text-neutral-500">
-            Esta URL salva as fotos na pasta do Google Drive e sincroniza as linhas na aba <strong>Dados_Raizen</strong>.
+            Esta URL salva as fotos na pasta <strong>Comprovantes_Raizen</strong> e sincroniza as linhas na aba <strong>Dados_Raizen</strong> para todos os PCs.
           </p>
         </div>
 
@@ -465,7 +487,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             {saveSuccess && (
               <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
                 <Check className="w-4 h-4" />
-                Configurações salvas com sucesso!
+                Configuração gravada no servidor para todos os PCs!
               </span>
             )}
           </div>
@@ -499,7 +521,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               Limpar Todos os Registros do Aplicativo
             </div>
             <p className="text-[11px] text-neutral-600 max-w-lg">
-              Atualmente existem <strong>{recordsCount} registro(s)</strong> no cache do aplicativo. Esta ação limpa os dados da visualização local. (Os dados já enviados ao Google Sheets permanecem salvos na sua planilha online).
+              Atualmente existem <strong>{recordsCount} registro(s)</strong> no cache do aplicativo. Esta ação limpa os dados da visualização local e do servidor. (Os dados já enviados ao Google Sheets permanecem salvos na sua planilha online).
             </p>
           </div>
 
@@ -565,8 +587,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <Code className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-neutral-900">Código Atualizado do Google Apps Script</h3>
-              <p className="text-xs text-neutral-500">Com suporte completo a leitura da aba Dados_Raizen e gravação no Drive.</p>
+              <h3 className="text-sm font-bold text-neutral-900">Código do Google Apps Script</h3>
+              <p className="text-xs text-neutral-500">Salva comprovantes no Drive e lê/grava em Dados_Raizen com sincronização multi-PC.</p>
             </div>
           </div>
 
@@ -586,14 +608,23 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </pre>
         </div>
 
-        <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
-          <h4 className="text-xs font-bold text-neutral-800">Instruções para o Google Apps Script:</h4>
-          <ol className="text-xs text-neutral-600 space-y-1 pl-4 list-decimal">
+        <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
+          <h4 className="text-xs font-bold text-neutral-900">Instruções Cruciais para Multi-Dispositivos:</h4>
+          <ol className="text-xs text-neutral-600 space-y-1.5 pl-4 list-decimal">
             <li>Abra sua planilha do Google Sheets onde está a aba <strong>Dados_Raizen</strong>.</li>
             <li>No menu superior, clique em <strong>Extensões ➔ Apps Script</strong>.</li>
-            <li>Substitua o código pelo script acima e clique em <strong>Salvar</strong>.</li>
-            <li>Clique em <strong>Implantar ➔ Nova implantação</strong> (ou Gerenciar implantações ➔ Nova versão).</li>
-            <li>Selecione tipo <strong>App da Web</strong>, configure <code>Quem tem acesso: Qualquer pessoa</code> e copie a URL gerada (terminada em <code>/exec</code>).</li>
+            <li>Substitua o código pelo script acima e clique em <strong>Salvar</strong> (disquete).</li>
+            <li>
+              Clique no botão azul <strong>Implantar ➔ Gerenciar implantações</strong> (ou <em>Nova implantação</em>):
+              <ul className="list-disc pl-4 mt-1 space-y-0.5 text-[11px] text-neutral-700">
+                <li>Clique no ícone de lápis (Editar).</li>
+                <li>Em <em>Versão</em>, selecione <strong>Nova versão</strong>.</li>
+                <li>
+                  <strong className="text-red-600">CRÍTICO:</strong> Em <em>Quem tem acesso</em>, selecione <strong>"Qualquer pessoa"</strong> (para que qualquer PC envie fotos sem bloqueio de login).
+                </li>
+              </ul>
+            </li>
+            <li>Clique em <strong>Implantar</strong> e copie a URL gerada (terminada em <code>/exec</code>).</li>
             <li>Cole a URL no campo acima e clique em <strong>Salvar Alterações</strong>.</li>
           </ol>
         </div>
