@@ -1,30 +1,28 @@
 /**
  * Google Apps Script Template Code
- * - Salva as fotos capturadas na pasta do Google Drive (Comprovantes_Raizen)
+ * - Salva as fotos capturadas na pasta do Google Drive
  * - Grava as linhas na aba "Dados_Raizen" (Colunas A até K)
- * - Lê e retorna os dados reais da planilha para sincronização instantânea em múltiplos PCs (doGet / doPost)
+ * - Lê e retorna os dados reais da planilha para o App quando solicitado (doGet / doPost)
  */
 
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * WFS / RAÍZEN - SISTEMA DE CONTROLE DE ABASTECIMENTO
  * Integração Google Drive + Google Sheets (Aba: Dados_Raizen)
- * Multi-Usuário / Multi-Dispositivos (Execução Rápida e Direta)
  */
 
-// Nome exato da aba na planilha e pasta no Drive
+// Nome exato da aba na planilha
 var NOME_ABA = "Dados_Raizen";
 var NOME_PASTA_DRIVE = "Comprovantes_Raizen";
 
 /**
  * Endpoint GET: Retorna todos os lançamentos da planilha Dados_Raizen em formato JSON
- * Permite que qualquer computador sincronize a planilha instantaneamente.
  */
 function doGet(e) {
   try {
     var records = getSheetRecords();
     return ContentService.createTextOutput(JSON.stringify({
       sucesso: true,
-      mensagem: "Dados sincronizados com sucesso da aba " + NOME_ABA,
+      mensagem: "Dados carregados da planilha com sucesso!",
       total: records.length,
       records: records,
       timestamp: new Date().toISOString()
@@ -39,7 +37,7 @@ function doGet(e) {
 }
 
 /**
- * Endpoint POST: Salva foto no Drive e grava linha na planilha instantaneamente
+ * Endpoint POST: Salva foto no Drive, grava linha na planilha ou retorna dados
  */
 function doPost(e) {
   var output;
@@ -55,7 +53,7 @@ function doPost(e) {
     if (data.action === 'ping_test') {
       return ContentService.createTextOutput(JSON.stringify({
         sucesso: true,
-        mensagem: "Conexão confirmada com sucesso com o Google Drive e Planilha!"
+        mensagem: "Conexão estabelecida com sucesso com o Google Drive e Planilha!"
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -87,12 +85,6 @@ function doPost(e) {
       var mimeType = data.mimeType || "image/jpeg";
       var blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
       var file = folder.createFile(blob);
-      
-      // Permitir visualização do link por qualquer um com o link
-      try {
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      } catch (shareErr) {}
-      
       fileId = file.getId();
       fileUrl = file.getUrl();
     }
@@ -109,7 +101,7 @@ function doPost(e) {
       var newRow = [
         d.numero || fileName.replace(/\\.[^/.]+$/, ""), // A: Número
         d.formaPagamento || "CONTRATO",                 // B: Forma de Pagamento
-        d.cliente || "ORBITAL SERV AUX TRANSP AEREO",   // C: Cliente
+        d.cliente || "WFS / RAÍZEN",                    // C: Cliente
         d.horaChegada || "",                            // D: Hora da Chegada
         d.inicioAbastecimento || "",                    // E: Início do Abastecimento
         d.terminoAbastecimento || "",                   // F: Término do Abastecimento
@@ -129,23 +121,7 @@ function doPost(e) {
       fileId: fileId,
       driveUrl: fileUrl,
       fileName: fileName,
-      sheetRowIndex: rowIndex,
-      record: {
-        id: "sheet-row-" + rowIndex,
-        numero: d.numero || fileName.replace(/\\.[^/.]+$/, ""),
-        formaPagamento: d.formaPagamento || "CONTRATO",
-        cliente: d.cliente || "ORBITAL SERV AUX TRANSP AEREO",
-        horaChegada: d.horaChegada || "",
-        inicioAbastecimento: d.inicioAbastecimento || "",
-        terminoAbastecimento: d.terminoAbastecimento || "",
-        produto: d.produto || "DIESEL",
-        volume: d.volume || "0,00",
-        obs: d.obs || "",
-        assinaturaCliente: d.assinaturaCliente || "",
-        driveFileUrl: fileUrl,
-        dataCriacao: new Date().toISOString(),
-        statusEnvio: 'enviado_drive'
-      }
+      sheetRowIndex: rowIndex
     };
 
   } catch (err) {
@@ -160,7 +136,7 @@ function doPost(e) {
 }
 
 /**
- * Função Auxiliar: Lê todas as linhas da aba Dados_Raizen (Colunas A até K)
+ * Função Auxiliar: Lê todas as linhas da aba Dados_Raizen
  */
 function getSheetRecords() {
   var ss = getSpreadsheet();
@@ -172,12 +148,6 @@ function getSheetRecords() {
 
   var range = sheet.getRange(2, 1, lastRow - 1, 11);
   var values = range.getValues();
-  var formulas = range.getFormulas();
-  var richText = null;
-  try {
-    richText = range.getRichTextValues();
-  } catch (e) {}
-
   var records = [];
 
   for (var i = 0; i < values.length; i++) {
@@ -189,23 +159,11 @@ function getSheetRecords() {
     // Pula linhas totalmente vazias
     if (!colA && !colC && !colH) continue;
 
-    // Extrai URL da foto se existir (string, fórmula HYPERLINK ou link de texto rico)
-    var photoUrl = String(row[10] || "").trim();
-    if (!photoUrl && formulas && formulas[i] && formulas[i][10]) {
-      var f = formulas[i][10];
-      var match = f.match(/HYPERLINK\\("([^"]+)"/i);
-      if (match && match[1]) photoUrl = match[1];
-    }
-    if (!photoUrl && richText && richText[i] && richText[i][10]) {
-      var link = richText[i][10].getLinkUrl();
-      if (link) photoUrl = link;
-    }
-
     records.push({
       id: "sheet-row-" + (i + 2) + "-" + (colA || i),
       numero: colA || ("OS-" + (i + 1)),
       formaPagamento: String(row[1] || "CONTRATO").trim(),
-      cliente: colC || "ORBITAL SERV AUX TRANSP AEREO",
+      cliente: colC || "WFS / RAÍZEN",
       horaChegada: formatTimeValue(row[3]),
       inicioAbastecimento: formatTimeValue(row[4]),
       terminoAbastecimento: formatTimeValue(row[5]),
@@ -213,7 +171,7 @@ function getSheetRecords() {
       volume: formatVolumeValue(row[7]),
       obs: String(row[8] || "").trim(),
       assinaturaCliente: String(row[9] || "").trim(),
-      driveFileUrl: photoUrl || undefined,
+      driveFileUrl: String(row[10] || "").trim(),
       dataCriacao: new Date().toISOString(),
       statusEnvio: 'enviado_drive'
     });
