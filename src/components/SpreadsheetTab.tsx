@@ -152,9 +152,11 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
     }
   };
 
-  // Auto-sync on initial mount if webhook configured
+  // Sincroniza toda vez que esta aba é aberta (não só quando ainda não há
+  // nenhum registro), para que o usuário sempre veja a versão mais recente
+  // e compartilhada da planilha assim que entra na tela.
   useEffect(() => {
-    if (gasConfig.webhookUrl && records.length === 0) {
+    if (gasConfig.webhookUrl) {
       handleSyncFromGoogleSheets();
     }
   }, [gasConfig.webhookUrl]);
