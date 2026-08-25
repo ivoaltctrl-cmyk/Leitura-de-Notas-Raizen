@@ -12,19 +12,15 @@ import {
   Unlock,
   LogOut,
   Code,
-  Trash2,
   FileSpreadsheet,
-  AlertTriangle,
 } from 'lucide-react';
-import { GasConfig, AbastecimentoRecord } from '../types';
+import { GasConfig } from '../types';
 import { testGoogleIntegration, fetchRecordsFromSheet } from '../utils/driveService';
 import { GOOGLE_APPS_SCRIPT_CODE } from '../utils/gasScriptTemplate';
 
 interface SettingsTabProps {
   gasConfig: GasConfig;
   onSaveConfig: (config: GasConfig) => void;
-  onClearAllRecords: () => void;
-  recordsCount: number;
 }
 
 const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
@@ -33,8 +29,6 @@ const DEFAULT_PASSWORD = 'admin';
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   gasConfig,
   onSaveConfig,
-  onClearAllRecords,
-  recordsCount,
 }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('admin_session_auth') === 'true';
@@ -59,10 +53,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordChangeMsg, setPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  // Clear confirmation dialog
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [clearSuccessMsg, setClearSuccessMsg] = useState(false);
 
   useEffect(() => {
     setWebhookUrl(gasConfig.webhookUrl || '');
@@ -191,13 +181,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       setShowPasswordChange(false);
       setPasswordChangeMsg(null);
     }, 2000);
-  };
-
-  const handleConfirmClearAll = () => {
-    onClearAllRecords();
-    setShowClearConfirm(false);
-    setClearSuccessMsg(true);
-    setTimeout(() => setClearSuccessMsg(false), 4000);
   };
 
   // 1. Password Protection Gate
@@ -478,84 +461,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Danger Zone: Data Management (ADM Only) */}
-      <div className="bg-white rounded-2xl border border-red-200 shadow-xs p-6 space-y-4">
-        <div className="flex items-center space-x-3 pb-3 border-b border-red-100">
-          <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 flex items-center justify-center font-bold">
-            <Trash2 className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-neutral-900">Gerenciamento de Dados (Área do Administrador)</h3>
-            <p className="text-xs text-neutral-500">
-              Controle protegido contra exclusões acidentais por operadores.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-red-50/50 rounded-xl border border-red-100">
-          <div className="space-y-1">
-            <div className="text-xs font-bold text-neutral-800">
-              Limpar Todos os Registros do Aplicativo
-            </div>
-            <p className="text-[11px] text-neutral-600 max-w-lg">
-              Atualmente existem <strong>{recordsCount} registro(s)</strong> no cache do aplicativo. Esta ação limpa os dados da visualização local. (Os dados já enviados ao Google Sheets permanecem salvos na sua planilha online).
-            </p>
-          </div>
-
-          <button
-            type="button"
-            id="btn-limpar-tudo-adm"
-            onClick={() => setShowClearConfirm(true)}
-            className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Limpar Todos os Registros</span>
-          </button>
-        </div>
-
-        {clearSuccessMsg && (
-          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
-            <Check className="w-4 h-4 text-emerald-600" />
-            <span>Todos os registros locais foram limpos com sucesso!</span>
-          </div>
-        )}
-      </div>
-
-      {/* Clear Confirmation Modal */}
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-neutral-200 animate-scaleUp">
-            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-
-            <div className="text-center space-y-1">
-              <h3 className="text-base font-bold text-neutral-900">Confirmar Limpeza Total</h3>
-              <p className="text-xs text-neutral-600">
-                Tem certeza que deseja apagar todos os <strong>{recordsCount} registro(s)</strong> da memória do aplicativo?
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowClearConfirm(false)}
-                className="flex-1 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmClearAll}
-                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs"
-              >
-                Sim, Limpar Tudo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Script Source Code & Installation Guide */}
       <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-6 space-y-4">
