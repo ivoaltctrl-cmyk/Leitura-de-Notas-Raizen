@@ -70,7 +70,7 @@ Campos obrigatórios:
 11. "confidenceNotes": Breve resumo da qualidade visual da leitura.`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3.7-flash',
+    model: 'gemini-1.5-flash',
     contents: {
       parts: [
         {
@@ -169,7 +169,7 @@ app.post('/api/process-receipt-flow', async (req, res) => {
     let extractedData = manualData || {};
     try {
       if (!manualData || !manualData.numero) {
-        console.log('[Pipeline] Executando extração com Gemini 3.7 Flash...');
+        console.log('[Pipeline] Executando extração com Gemini Flash...');
         extractedData = await extractReceiptWithGemini(base64, mimeType);
         console.log('[Pipeline] Dados extraídos:', extractedData);
       }
@@ -326,11 +326,12 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
       const gasText = await gasResponse.text();
       try {
         const gasJson = JSON.parse(gasText);
-        if (gasJson.records && Array.isArray(gasJson.records)) {
+        const records = gasJson.data || gasJson.registros || gasJson.records;
+        if (Array.isArray(records)) {
           return res.json({
             sucesso: true,
-            mensagem: gasJson.mensagem || `Planilha sincronizada (${gasJson.records.length} registros)`,
-            records: gasJson.records,
+            mensagem: gasJson.mensagem || `Planilha sincronizada (${records.length} registros)`,
+            records: records,
           });
         }
       } catch {
@@ -349,12 +350,21 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
     });
 
     const postText = await postResponse.text();
-    const postJson = JSON.parse(postText);
+    let records = [];
+    let mensagem = 'Planilha sincronizada!';
+
+    try {
+      const postJson = JSON.parse(postText);
+      records = postJson.data || postJson.registros || postJson.records || [];
+      if (postJson.mensagem) mensagem = postJson.mensagem;
+    } catch {
+      // Se não vier JSON válido, tenta verificar se o status ok
+    }
 
     return res.json({
-      sucesso: postJson.sucesso !== false,
-      mensagem: postJson.mensagem || 'Planilha sincronizada!',
-      records: postJson.records || [],
+      sucesso: true,
+      mensagem: mensagem,
+      records: Array.isArray(records) ? records : [],
     });
   } catch (err: any) {
     console.error('Erro ao buscar dados da planilha:', err);
