@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ExternalLink, HardDrive, Download, Calendar, User, FileText, CheckCircle2 } from 'lucide-react';
+import { X, ExternalLink, HardDrive, Calendar, User, FileText, CheckCircle2, Clock } from 'lucide-react';
 import { AbastecimentoRecord } from '../types';
 
 interface ReceiptPreviewModalProps {
@@ -60,22 +60,42 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({ record
           {/* Quick summary pills */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
             <div className="p-2.5 bg-neutral-50 rounded-lg border border-neutral-200">
-              <span className="text-neutral-500 block text-[11px]">Produto</span>
+              <span className="text-neutral-500 block text-[11px]">Produto (Col G)</span>
               <span className="font-bold text-neutral-900">{record.produto || '-'}</span>
             </div>
             <div className="p-2.5 bg-neutral-50 rounded-lg border border-neutral-200">
-              <span className="text-neutral-500 block text-[11px]">Volume</span>
+              <span className="text-neutral-500 block text-[11px]">Volume (Col H)</span>
               <span className="font-bold text-red-600">{record.volume ? `${record.volume} L` : '-'}</span>
             </div>
             <div className="p-2.5 bg-neutral-50 rounded-lg border border-neutral-200">
-              <span className="text-neutral-500 block text-[11px]">Forma Pgto</span>
+              <span className="text-neutral-500 block text-[11px]">Forma Pgto (Col B)</span>
               <span className="font-semibold text-neutral-800">{record.formaPagamento || '-'}</span>
             </div>
             <div className="p-2.5 bg-neutral-50 rounded-lg border border-neutral-200">
-              <span className="text-neutral-500 block text-[11px]">Horários</span>
-              <span className="font-semibold text-neutral-800">
-                {record.horaChegada || '-'} / {record.inicioAbastecimento || '-'}
-              </span>
+              <span className="text-neutral-500 block text-[11px]">Término (Col F)</span>
+              <span className="font-bold text-neutral-900 font-mono">{record.terminoAbastecimento || '-'}</span>
+            </div>
+          </div>
+
+          {/* Horários Grid */}
+          <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2 text-xs">
+            <div className="text-[11px] font-bold text-neutral-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+              <Clock className="w-3.5 h-3.5 text-red-600" />
+              <span>Cronologia do Abastecimento (Colunas D, E, F)</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-white p-2 rounded-lg border border-neutral-200">
+                <span className="text-[10px] text-neutral-500 block">Hora Chegada (D)</span>
+                <span className="font-mono font-bold text-neutral-800">{record.horaChegada || '-'}</span>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-neutral-200">
+                <span className="text-[10px] text-neutral-500 block">Início Abast. (E)</span>
+                <span className="font-mono font-bold text-neutral-800">{record.inicioAbastecimento || '-'}</span>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-neutral-200">
+                <span className="text-[10px] text-neutral-500 block">Término Abast. (F)</span>
+                <span className="font-mono font-bold text-red-700">{record.terminoAbastecimento || '-'}</span>
+              </div>
             </div>
           </div>
 
@@ -83,12 +103,12 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({ record
           <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2 text-xs">
             <div className="flex justify-between items-center">
               <span className="text-neutral-500 flex items-center gap-1">
-                <User className="w-3.5 h-3.5" /> Assinatura / Matrícula:
+                <User className="w-3.5 h-3.5" /> Assinatura do Cliente (Col J):
               </span>
               <span className="font-medium text-neutral-900">{record.assinaturaCliente || 'Não informada'}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-neutral-500">Observação / Equipamento:</span>
+              <span className="text-neutral-500">Observação / Equipamento (Col I):</span>
               <span className="font-medium text-neutral-900">{record.obs || 'Nenhuma'}</span>
             </div>
             <div className="flex justify-between items-center">

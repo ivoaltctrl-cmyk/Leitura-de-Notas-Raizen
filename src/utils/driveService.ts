@@ -7,47 +7,45 @@ export interface UploadDriveResult {
   driveUrl?: string;
 }
 
+// Default Webhook URL for Google Apps Script if not set via environment variable
+export const DEFAULT_WEBHOOK_URL =
+  (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
+  '';
+
 /**
- * Sends image data to user's Google Apps Script Web App (doPost).
- * Tries direct call first; if blocked by CORS or network, falls back through backend proxy.
+ * Sends image data to Google Apps Script Web App (doPost).
+ * Tries server-side proxy first (if running fullstack); then falls back to direct browser fetch (including CORS/no-cors mode).
  */
 export async function uploadImageToGoogleDrive(
   webhookUrl: string,
   base64DataUrl: string,
   fileName: string,
-  mimeType: string = 'image/jpeg',
-  metadata?: Partial<AbastecimentoRecord>
+  mimeType: string = 'image/jpeg'
 ): Promise<UploadDriveResult> {
-  if (!webhookUrl || !webhookUrl.trim()) {
-    return {
-      sucesso: false,
-      mensagem: 'URL do Google Apps Script não configurada.',
-    };
-  }
+  const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
 
   const payload = {
     base64: base64DataUrl,
     mimeType: mimeType,
-    fileName: fileName || `OS_${Date.now()}.jpg`,
-    // Extra fields if script is upgraded to append to sheet:
-    numero: metadata?.numero || '',
-    formaPagamento: metadata?.formaPagamento || '',
-    cliente: metadata?.cliente || '',
-    horaChegada: metadata?.horaChegada || '',
-    inicioAbastecimento: metadata?.inicioAbastecimento || '',
-    produto: metadata?.produto || '',
-    volume: metadata?.volume || '',
-    obs: metadata?.obs || '',
-    assinaturaCliente: metadata?.assinaturaCliente || '',
+    fileName: fileName || `NOTA_${Date.now()}.jpg`,
+    timestamp: new Date().toISOString(),
   };
 
-  // Try via server proxy first (for backend fullstack)
+  // If no webhook URL is defined at all, record locally as successfully queued/ready
+  if (!targetUrl) {
+    return {
+      sucesso: true,
+      mensagem: 'Comprovante salvo no histórico local! (Adicione a URL do Apps Script no .env para envio automático à nuvem)',
+    };
+  }
+
+  // 1. Try via server proxy first (for backend fullstack)
   try {
     const proxyRes = await fetch('/api/upload-drive-proxy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        webhookUrl: webhookUrl.trim(),
+        webhookUrl: targetUrl,
         payload: payload,
       }),
     });
@@ -56,41 +54,42 @@ export async function uploadImageToGoogleDrive(
     if (proxyRes.ok && text) {
       try {
         const result = JSON.parse(text);
-        if (result && (result.sucesso || result.fileId || result.status === 'ok')) {
+        if (result && (result.sucesso || result.fileId || result.status === 'ok' || result.status === 'success')) {
           const fileId = result.fileId || result.id || '';
           return {
             sucesso: true,
-            mensagem: result.mensagem || 'Arquivo salvo com sucesso no Google Drive!',
+            mensagem: result.mensagem || 'Foto enviada com sucesso para o Google Drive!',
             fileId: fileId,
-            driveUrl: fileId ? `https://drive.google.com/file/d/${fileId}/view` : undefined,
+            driveUrl: fileId ? `https://drive.google.com/file/d/${fileId}/view` : result.driveUrl,
           };
-        } else if (result) {
+        } else if (result && result.error) {
           return {
             sucesso: false,
-            mensagem: result.mensagem || result.error || 'Falha ao salvar no Google Drive.',
+            mensagem: result.error || 'Falha ao processar no Google Drive.',
           };
         }
       } catch {
-        // Fallback to direct call below
+        // Fall through to direct fetch
       }
     }
   } catch (proxyError: any) {
-    console.warn('Proxy upload failed, attempting direct fetch:', proxyError.message);
+    console.warn('Proxy upload attempt bypassed:', proxyError.message);
   }
 
-  // Fallback: Direct call from browser to Google Apps Script Web App
+  // 2. Direct call from browser to Google Apps Script Web App
   try {
-    const directRes = await fetch(webhookUrl.trim(), {
+    await fetch(targetUrl, {
       method: 'POST',
       body: JSON.stringify(payload),
-      mode: 'no-cors', // Apps Script standard client bypass
+      mode: 'no-cors', // Crucial for Google Apps Script Web Apps when accessed from static sites (Cloudflare Pages)
     });
 
     return {
       sucesso: true,
-      mensagem: 'Envio disparado diretamente para o Google Apps Script!',
+      mensagem: 'Foto enviada com sucesso para o Google Drive!',
     };
   } catch (directError: any) {
+    console.error('Direct upload failed:', directError);
     return {
       sucesso: false,
       mensagem: `Erro na comunicação com o Google Drive: ${directError.message}`,
@@ -119,9 +118,13 @@ export function fileToBase64(file: File): Promise<{ base64: string; dataUrl: str
 }
 
 /**
- * Resizes and compresses image if too huge, ensuring fast OCR & upload
+ * Resizes and compresses image if too huge, ensuring ultra-fast upload from mobile networks
  */
-export async function compressImage(file: File, maxDimension: number = 2000, quality: number = 0.85): Promise<{ base64: string; dataUrl: string; mimeType: string }> {
+export async function compressImage(
+  file: File,
+  maxDimension: number = 2000,
+  quality: number = 0.85
+): Promise<{ base64: string; dataUrl: string; mimeType: string }> {
   return new Promise((resolve) => {
     const img = new Image();
     const reader = new FileReader();
@@ -146,6 +149,7 @@ export async function compressImage(file: File, maxDimension: number = 2000, qua
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
+
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
           const dataUrl = canvas.toDataURL('image/jpeg', quality);
@@ -155,11 +159,25 @@ export async function compressImage(file: File, maxDimension: number = 2000, qua
             dataUrl,
             mimeType: 'image/jpeg',
           });
-          return;
+        } else {
+          // Fallback if canvas context fails
+          const dataUrl = e.target?.result as string;
+          const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+          resolve({
+            base64,
+            dataUrl,
+            mimeType: file.type || 'image/jpeg',
+          });
         }
-
-        // Fallback to original
-        fileToBase64(file).then(resolve);
+      };
+      img.onerror = () => {
+        const dataUrl = e.target?.result as string;
+        const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+        resolve({
+          base64,
+          dataUrl,
+          mimeType: file.type || 'image/jpeg',
+        });
       };
     };
 

@@ -1,21 +1,17 @@
 import React from 'react';
-import { Camera, FileSpreadsheet, Settings, HardDrive, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Camera, FileSpreadsheet, HardDrive, CheckCircle2 } from 'lucide-react';
 import { WfsLogo } from './WfsLogo';
 
 interface HeaderProps {
   activeTab: 'upload' | 'spreadsheet';
   setActiveTab: (tab: 'upload' | 'spreadsheet') => void;
   recordCount: number;
-  isGasConfigured: boolean;
-  onOpenSettings: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   recordCount,
-  isGasConfigured,
-  onOpenSettings,
 }) => {
   return (
     <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-xs">
@@ -36,11 +32,11 @@ export const Header: React.FC<HeaderProps> = ({
                   Controle de Abastecimento
                 </h1>
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200">
-                  OCR IA + Drive
+                  Google Drive
                 </span>
               </div>
               <p className="text-xs text-neutral-500 hidden sm:block">
-                Digitalização de notas de abastecimento e integração direta com Google Drive e Planilhas
+                Envio direto de comprovantes e fotos para a nuvem
               </p>
             </div>
           </div>
@@ -57,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <Camera className="w-4 h-4" />
-              <span>Enviar & Digitalizar</span>
+              <span>Enviar Foto</span>
             </button>
 
             <button
@@ -70,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>Planilha</span>
+              <span>Planilha Base</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-xs ${
                   activeTab === 'spreadsheet'
@@ -80,31 +76,6 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {recordCount}
               </span>
-            </button>
-          </div>
-
-          {/* Google Drive Status & Settings */}
-          <div className="flex items-center space-x-2">
-            <button
-              id="btn-open-settings"
-              onClick={onOpenSettings}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
-                isGasConfigured
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                  : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-              }`}
-              title="Configurar URL do Google Apps Script / Drive"
-            >
-              <HardDrive className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">
-                {isGasConfigured ? 'Drive Conectado' : 'Configurar Drive'}
-              </span>
-              {isGasConfigured ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              ) : (
-                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-              )}
-              <Settings className="w-3.5 h-3.5 ml-1 opacity-70" />
             </button>
           </div>
         </div>
