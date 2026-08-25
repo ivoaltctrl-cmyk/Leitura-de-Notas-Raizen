@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { UploadReceiptTab } from './components/UploadReceiptTab';
 import { SpreadsheetTab } from './components/SpreadsheetTab';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
+import { GoogleIntegrationModal } from './components/GoogleIntegrationModal';
 import { AbastecimentoRecord, GasConfig } from './types';
 import { INITIAL_RECORDS } from './data/sampleReceipts';
 
@@ -11,6 +12,8 @@ const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet'>('upload');
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
   const [records, setRecords] = useState<AbastecimentoRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
@@ -23,7 +26,7 @@ export default function App() {
     return INITIAL_RECORDS;
   });
 
-  const [gasConfig] = useState<GasConfig>(() => {
+  const [gasConfig, setGasConfig] = useState<GasConfig>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
       if (saved) {
@@ -50,6 +53,16 @@ export default function App() {
     }
   }, [records]);
 
+  // Sync gasConfig to localStorage
+  const handleSaveGasConfig = (newConfig: GasConfig) => {
+    setGasConfig(newConfig);
+    try {
+      localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(newConfig));
+    } catch (e) {
+      console.error('Erro ao salvar config no localStorage:', e);
+    }
+  };
+
   const handleAddRecord = (newRecord: AbastecimentoRecord) => {
     setRecords((prev) => [newRecord, ...prev]);
   };
@@ -69,6 +82,8 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         recordCount={records.length}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        hasWebhookConfigured={!!gasConfig.webhookUrl}
       />
 
       {/* Main Container */}
@@ -78,6 +93,7 @@ export default function App() {
             gasConfig={gasConfig}
             onAddRecord={handleAddRecord}
             onSwitchToSpreadsheet={() => setActiveTab('spreadsheet')}
+            onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
             recentRecords={records}
           />
         ) : (
@@ -87,6 +103,7 @@ export default function App() {
             onDeleteRecord={handleDeleteRecord}
             onOpenUploadTab={() => setActiveTab('upload')}
             onPreviewReceipt={(rec) => setPreviewRecord(rec)}
+            onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
             gasConfig={gasConfig}
           />
         )}
@@ -94,6 +111,14 @@ export default function App() {
 
       {/* Receipt Image Preview Modal */}
       <ReceiptPreviewModal record={previewRecord} onClose={() => setPreviewRecord(null)} />
+
+      {/* Google Drive & Sheets Integration Settings Modal */}
+      <GoogleIntegrationModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+        gasConfig={gasConfig}
+        onSaveConfig={handleSaveGasConfig}
+      />
     </div>
   );
 }

@@ -1,17 +1,21 @@
 import React from 'react';
-import { Camera, FileSpreadsheet, HardDrive, CheckCircle2 } from 'lucide-react';
+import { Camera, FileSpreadsheet, HardDrive, Settings, Zap } from 'lucide-react';
 import { WfsLogo } from './WfsLogo';
 
 interface HeaderProps {
   activeTab: 'upload' | 'spreadsheet';
   setActiveTab: (tab: 'upload' | 'spreadsheet') => void;
   recordCount: number;
+  onOpenSettings: () => void;
+  hasWebhookConfigured: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   recordCount,
+  onOpenSettings,
+  hasWebhookConfigured,
 }) => {
   return (
     <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-xs">
@@ -31,52 +35,72 @@ export const Header: React.FC<HeaderProps> = ({
                 <h1 className="text-base sm:text-lg font-bold text-neutral-900 leading-tight">
                   Controle de Abastecimento
                 </h1>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200">
-                  Google Drive
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200">
+                  <Zap className="w-3 h-3 text-red-600" />
+                  Fluxo Integrado
                 </span>
               </div>
               <p className="text-xs text-neutral-500 hidden sm:block">
-                Envio direto de comprovantes e fotos para a nuvem
+                Front ➔ Google Drive ➔ Back (IA) ➔ Sheets (Dados_Raizen) ➔ Front
               </p>
             </div>
           </div>
 
-          {/* Navigation Tabs */}
-          <div className="flex items-center space-x-1 sm:space-x-2 bg-neutral-100 p-1 rounded-xl border border-neutral-200">
+          {/* Actions & Navigation Tabs */}
+          <div className="flex items-center space-x-2">
+            {/* Direct Settings / Integration Button */}
             <button
-              id="btn-tab-upload"
-              onClick={() => setActiveTab('upload')}
-              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer ${
-                activeTab === 'upload'
-                  ? 'bg-white text-red-700 shadow-xs font-semibold'
-                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60'
-              }`}
+              type="button"
+              onClick={onOpenSettings}
+              title="Configurar Integração com Google Drive e Google Sheets"
+              className="p-2 sm:px-3 sm:py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-neutral-200"
             >
-              <Camera className="w-4 h-4" />
-              <span>Enviar Foto</span>
+              <HardDrive className={`w-4 h-4 ${hasWebhookConfigured ? 'text-emerald-600' : 'text-amber-600'}`} />
+              <span className="hidden md:inline">Drive & Sheets</span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  hasWebhookConfigured ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                }`}
+              ></span>
             </button>
 
-            <button
-              id="btn-tab-spreadsheet"
-              onClick={() => setActiveTab('spreadsheet')}
-              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer ${
-                activeTab === 'spreadsheet'
-                  ? 'bg-white text-red-700 shadow-xs font-semibold'
-                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60'
-              }`}
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Planilha Base</span>
-              <span
-                className={`ml-1 px-1.5 py-0.2 rounded-full text-xs ${
-                  activeTab === 'spreadsheet'
-                    ? 'bg-red-600 text-white font-bold'
-                    : 'bg-neutral-300 text-neutral-700'
+            {/* Navigation Tabs */}
+            <div className="flex items-center space-x-1 sm:space-x-1.5 bg-neutral-100 p-1 rounded-xl border border-neutral-200">
+              <button
+                id="btn-tab-upload"
+                onClick={() => setActiveTab('upload')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+                  activeTab === 'upload'
+                    ? 'bg-white text-red-700 shadow-xs font-semibold'
+                    : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60'
                 }`}
               >
-                {recordCount}
-              </span>
-            </button>
+                <Camera className="w-4 h-4" />
+                <span>Foto</span>
+              </button>
+
+              <button
+                id="btn-tab-spreadsheet"
+                onClick={() => setActiveTab('spreadsheet')}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+                  activeTab === 'spreadsheet'
+                    ? 'bg-white text-red-700 shadow-xs font-semibold'
+                    : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Planilha</span>
+                <span
+                  className={`ml-1 px-1.5 py-0.2 rounded-full text-[11px] ${
+                    activeTab === 'spreadsheet'
+                      ? 'bg-red-600 text-white font-bold'
+                      : 'bg-neutral-300 text-neutral-700'
+                  }`}
+                >
+                  {recordCount}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

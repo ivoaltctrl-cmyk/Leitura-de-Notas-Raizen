@@ -10,18 +10,21 @@ import {
   Image as ImageIcon,
   ArrowUpRight,
   Trash2,
-  Sparkles,
   Zap,
   Check,
-  Eye,
+  Cpu,
+  Clock,
+  Settings,
+  ShieldCheck,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
-import { compressImage, uploadImageToGoogleDrive } from '../utils/driveService';
+import { compressImage, processReceiptPipeline } from '../utils/driveService';
 
 interface UploadReceiptTabProps {
   gasConfig: GasConfig;
   onAddRecord: (record: AbastecimentoRecord) => void;
   onSwitchToSpreadsheet: () => void;
+  onOpenSettingsModal: () => void;
   recentRecords?: AbastecimentoRecord[];
 }
 
@@ -29,6 +32,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
   gasConfig,
   onAddRecord,
   onSwitchToSpreadsheet,
+  onOpenSettingsModal,
   recentRecords = [],
 }) => {
   const [selectedImage, setSelectedImage] = useState<{
@@ -39,11 +43,11 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
     fileSize?: number;
   } | null>(null);
 
-  const [isUploading, setIsUploading] = useState(false);
+  const [isProcessingPipeline, setIsProcessingPipeline] = useState(false);
+  const [pipelineStep, setPipelineStep] = useState<string>('');
   const [lastSavedRecord, setLastSavedRecord] = useState<AbastecimentoRecord | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [useCamera, setUseCamera] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -61,7 +65,6 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-    setCameraActive(false);
     setUseCamera(false);
   };
 
@@ -115,13 +118,11 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
-        setCameraActive(true);
       }
     } catch (err: any) {
       console.error('Erro ao acessar a câmera:', err);
       setErrorMsg('Não foi possível acessar a câmera do dispositivo. Verifique as permissões do navegador ou selecione uma foto da galeria.');
       setUseCamera(false);
-      setCameraActive(false);
     }
   };
 
@@ -155,55 +156,58 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
     }
   };
 
-  // Sample receipt generator for quick preview/test
-  const loadSampleReceipt = (label: string) => {
+  // Sample receipt generator for testing with Termino do Abastecimento
+  const loadSampleReceipt = (label: string, terminoTime: string = '07:22') => {
     setErrorMsg(null);
     setLastSavedRecord(null);
 
     const canvas = document.createElement('canvas');
-    canvas.width = 700;
-    canvas.height = 900;
+    canvas.width = 750;
+    canvas.height = 950;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     // Background paper
     ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(0, 0, 700, 900);
+    ctx.fillRect(0, 0, 750, 950);
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 3;
-    ctx.strokeRect(15, 15, 670, 870);
+    ctx.strokeRect(15, 15, 720, 920);
 
     // Header banner
-    ctx.fillStyle = '#E31B23';
-    ctx.fillRect(30, 30, 640, 70);
+    ctx.fillStyle = '#E52421';
+    ctx.fillRect(30, 30, 690, 75);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 24px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('WFS • ORDEM DE ABASTECIMENTO', 350, 75);
+    ctx.fillText('WFS • ORDEM DE ABASTECIMENTO (RAÍZEN)', 375, 76);
 
     // Details grid
     ctx.textAlign = 'left';
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 18px monospace';
-    ctx.fillText(`Nº ORDEM: 22933${Math.floor(10 + Math.random() * 90)}`, 50, 150);
+    const osNum = `22933${Math.floor(10 + Math.random() * 90)}`;
+    ctx.fillText(`Nº NOTA / OS: ${osNum}`, 50, 160);
     ctx.font = '16px monospace';
-    ctx.fillText('FORMA PAGTO: CONTRATO', 50, 200);
-    ctx.fillText(`CLIENTE: ${label.toUpperCase()}`, 50, 250);
-    ctx.fillText('HORA CHEGADA: 07:13   |   INÍCIO: 07:14', 50, 300);
-    ctx.fillText('PRODUTO: DIESEL S10 AEROPORTO', 50, 350);
-    ctx.fillText('VOLUME TOTAL: 224,00 LITROS', 50, 400);
-    ctx.fillText('OBS / EQUIPAMENTO: GRU-PATIO-135', 50, 450);
-    ctx.fillText('RESPONSÁVEL: OPERADOR WFS 304371', 50, 520);
+    ctx.fillText('FORMA PAGTO: CONTRATO', 50, 210);
+    ctx.fillText(`CLIENTE: ${label.toUpperCase()}`, 50, 260);
+    ctx.fillText('HORA CHEGADA: 07:13', 50, 310);
+    ctx.fillText('INÍCIO ABASTECIMENTO: 07:14', 50, 360);
+    ctx.fillText(`TÉRMINO ABASTECIMENTO: ${terminoTime}`, 50, 410);
+    ctx.fillText('PRODUTO: DIESEL S10 AEROPORTO', 50, 460);
+    ctx.fillText('VOLUME TOTAL: 224,00 LITROS', 50, 510);
+    ctx.fillText('OBS / EQUIPAMENTO: GE135 - PÁTIO T2', 50, 560);
+    ctx.fillText('ASSINATURA CLIENTE: joanilson 304371', 50, 620);
 
     // Stamp
     ctx.strokeStyle = '#15803d';
     ctx.lineWidth = 2;
-    ctx.strokeRect(50, 580, 320, 100);
+    ctx.strokeRect(50, 680, 360, 110);
     ctx.fillStyle = '#15803d';
     ctx.font = 'bold 15px sans-serif';
-    ctx.fillText('ABASTECIMENTO CONFERIDO', 70, 620);
+    ctx.fillText('ABASTECIMENTO CONFERIDO & REGISTRADO', 65, 720);
     ctx.font = '13px sans-serif';
-    ctx.fillText('MATRÍCULA: 304371 - GRU', 70, 655);
+    ctx.fillText('MATRÍCULA: 304371 - GRU AIRPORT', 65, 755);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
     const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -213,80 +217,90 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
       dataUrl,
       mimeType: 'image/jpeg',
       fileName: `Nota_${label.toLowerCase()}_${Date.now()}.jpg`,
-      fileSize: 52000,
+      fileSize: 56000,
     };
 
     setSelectedImage(imgObj);
   };
 
-  // Submit and Upload directly to Google Drive
-  const handleUploadToDrive = async () => {
+  /**
+   * Complete Pipeline Execution:
+   * Front ➔ Driver (Google Drive) ➔ Back (IA Gemini) ➔ Sheets (Dados_Raizen) ➔ Front (Espelho)
+   */
+  const handleExecuteFullPipeline = async () => {
     if (!selectedImage) {
       setErrorMsg('Por favor, tire uma foto ou selecione uma imagem da nota.');
       return;
     }
 
-    setIsUploading(true);
+    setIsProcessingPipeline(true);
     setErrorMsg(null);
-
-    const recordId = `rec-${Date.now()}`;
-    let driveFileId: string | undefined;
-    let driveFileUrl: string | undefined;
-    let statusEnvio: 'enviado_drive' | 'pendente' | 'erro' = 'enviado_drive';
-    let statusMsg = 'Foto enviada para o Google Drive com sucesso!';
+    setPipelineStep('Iniciando envio: Front ➔ Google Drive ➔ Back...');
 
     try {
-      const uploadRes = await uploadImageToGoogleDrive(
-        gasConfig.webhookUrl,
+      setPipelineStep('1/3: Enviando foto para a nuvem e extraindo 11 colunas no Back...');
+      const result = await processReceiptPipeline(
         selectedImage.dataUrl,
         selectedImage.fileName,
-        selectedImage.mimeType
+        selectedImage.mimeType,
+        gasConfig.webhookUrl
       );
 
-      if (uploadRes.sucesso) {
-        driveFileId = uploadRes.fileId;
-        driveFileUrl = uploadRes.driveUrl;
-        statusEnvio = 'enviado_drive';
-        statusMsg = uploadRes.mensagem || 'Foto enviada com sucesso para a pasta do Google Drive!';
+      if (result.sucesso && result.record) {
+        setPipelineStep('2/3: Gravando linha na planilha Dados_Raizen...');
+        onAddRecord(result.record);
+        setLastSavedRecord(result.record);
+        setSelectedImage(null);
       } else {
-        statusEnvio = 'erro';
-        statusMsg = uploadRes.mensagem;
-        setErrorMsg(uploadRes.mensagem);
+        setErrorMsg(result.mensagem || 'Falha ao processar o comprovante.');
       }
     } catch (err: any) {
-      statusEnvio = 'erro';
-      statusMsg = `Erro no envio: ${err.message || 'Falha de conexão'}`;
-      setErrorMsg(statusMsg);
+      setErrorMsg(`Erro no fluxo de integração: ${err.message || 'Falha de comunicação'}`);
     } finally {
-      const newRecord: AbastecimentoRecord = {
-        id: recordId,
-        fileName: selectedImage.fileName,
-        fotoBase64: selectedImage.dataUrl,
-        fotoMimeType: selectedImage.mimeType,
-        driveFileId: driveFileId,
-        driveFileUrl: driveFileUrl,
-        dataCriacao: new Date().toISOString(),
-        statusEnvio: statusEnvio,
-        statusMsg: statusMsg,
-      };
-
-      onAddRecord(newRecord);
-      setLastSavedRecord(newRecord);
-      setIsUploading(false);
-      setSelectedImage(null);
+      setIsProcessingPipeline(false);
+      setPipelineStep('');
     }
   };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Top Banner / Info */}
-      <div className="text-center space-y-1.5 pb-2">
-        <h2 className="text-xl sm:text-2xl font-black text-neutral-900 tracking-tight">
-          Envio de Comprovante de Abastecimento
-        </h2>
-        <p className="text-xs sm:text-sm text-neutral-600 max-w-lg mx-auto">
-          Tire ou selecione a foto da nota. A imagem será salva diretamente na pasta designada do Google Drive para processamento.
-        </p>
+      {/* Top Banner / Info & Google Integration Status */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 sm:p-5 rounded-2xl border border-neutral-200 shadow-xs">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
+            <Zap className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-sm sm:text-base font-black text-neutral-900 tracking-tight">
+              Fluxo Automático Integrado
+            </h2>
+            <div className="flex items-center gap-1.5 text-xs text-neutral-500 flex-wrap">
+              <span className="font-semibold text-neutral-700">Front</span>
+              <span>➔</span>
+              <span className="font-semibold text-emerald-700">Google Drive</span>
+              <span>➔</span>
+              <span className="font-semibold text-blue-700">Back (IA)</span>
+              <span>➔</span>
+              <span className="font-semibold text-red-700">Sheets (Dados_Raizen)</span>
+              <span>➔</span>
+              <span className="font-semibold text-neutral-700">Front</span>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenSettingsModal}
+          className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+        >
+          <Settings className="w-3.5 h-3.5" />
+          <span>Configurar Drive & Sheets</span>
+          {gasConfig.webhookUrl ? (
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+          )}
+        </button>
       </div>
 
       {/* Success Notification Banner */}
@@ -299,13 +313,13 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
               </div>
               <div className="space-y-0.5">
                 <h3 className="font-bold text-sm sm:text-base text-emerald-900 flex items-center gap-1.5">
-                  Foto enviada com sucesso!
+                  Comprovante Processado e Espelhado!
                 </h3>
                 <p className="text-xs text-emerald-800 font-medium">
-                  {lastSavedRecord.fileName} • {new Date(lastSavedRecord.dataCriacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  OS #{lastSavedRecord.numero || 'Sem Nº'} • {lastSavedRecord.cliente || 'WFS'} • Término: {lastSavedRecord.terminoAbastecimento || '-'} • {lastSavedRecord.volume || '0'} L
                 </p>
                 <p className="text-[11px] text-emerald-700">
-                  {lastSavedRecord.statusMsg || 'Arquivo registrado e disponível no Google Drive.'}
+                  {lastSavedRecord.statusMsg || 'Gravado com sucesso no Google Drive e refletido na planilha.'}
                 </p>
               </div>
             </div>
@@ -342,7 +356,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
               className="px-3.5 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-100/80 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              Ver Histórico de Envios
+              Ver Planilha Espelhada (Colunas A a K)
             </button>
           </div>
         </div>
@@ -353,7 +367,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
         <div className="bg-red-50 border border-red-300 text-red-900 rounded-2xl p-4 flex items-start space-x-3 text-xs shadow-xs animate-fadeIn">
           <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <span className="font-bold">Aviso no envio: </span>
+            <span className="font-bold">Aviso no processamento: </span>
             <span>{errorMsg}</span>
           </div>
           <button
@@ -373,12 +387,12 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
           <div className="flex items-center space-x-2">
             <div className="w-2.5 h-2.5 rounded-full bg-red-600"></div>
             <span className="text-xs font-bold uppercase tracking-wider text-neutral-700">
-              Captura do Comprovante
+              Captura e Envio do Comprovante
             </span>
           </div>
           <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-neutral-500">
-            <HardDrive className="w-3.5 h-3.5 text-neutral-400" />
-            <span>Destino: Google Drive</span>
+            <HardDrive className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Google Drive + Google Sheets</span>
           </div>
         </div>
 
@@ -398,10 +412,10 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                 {/* Target Frame overlay */}
                 <div className="absolute inset-4 sm:inset-8 border-2 border-white/60 border-dashed rounded-xl pointer-events-none flex flex-col justify-between p-3">
                   <span className="bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md self-center backdrop-blur-xs">
-                    Enquadre a nota de abastecimento aqui
+                    Enquadre a nota de abastecimento Raízen aqui
                   </span>
                   <div className="flex justify-between items-end text-white/50 text-[10px]">
-                    <span>WFS</span>
+                    <span>WFS RAÍZEN</span>
                     <span>HD 1080p</span>
                   </div>
                 </div>
@@ -453,30 +467,30 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                 </div>
               </div>
 
-              {/* Big Primary Action: Send to Google Drive */}
+              {/* Big Primary Action: Execute Full Pipeline */}
               <div className="space-y-2">
                 <button
                   type="button"
-                  id="btn-send-to-drive"
-                  onClick={handleUploadToDrive}
-                  disabled={isUploading}
+                  id="btn-execute-pipeline"
+                  onClick={handleExecuteFullPipeline}
+                  disabled={isProcessingPipeline}
                   className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:bg-neutral-300 text-white rounded-2xl text-base font-black flex items-center justify-center gap-2.5 shadow-lg shadow-red-600/20 transition-all cursor-pointer transform active:scale-[0.99]"
                 >
-                  {isUploading ? (
+                  {isProcessingPipeline ? (
                     <>
                       <RefreshCw className="w-5 h-5 animate-spin" />
-                      <span>Enviando para o Google Drive...</span>
+                      <span>{pipelineStep || 'Processando no Drive, Back e Sheets...'}</span>
                     </>
                   ) : (
                     <>
-                      <HardDrive className="w-5 h-5" />
-                      <span>Enviar Comprovante para o Google Drive</span>
+                      <Zap className="w-5 h-5" />
+                      <span>Enviar Comprovante (Drive ➔ Back ➔ Sheets)</span>
                     </>
                   )}
                 </button>
 
                 <p className="text-center text-[11px] text-neutral-500 font-medium">
-                  Ao clicar, a foto é compactada e transferida com segurança para a nuvem.
+                  Salva o arquivo no Google Drive, extrai as 11 colunas no Back e insere na aba <code>Dados_Raizen</code>.
                 </p>
               </div>
             </div>
@@ -501,7 +515,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                   Clique para selecionar da galeria ou arraste aqui
                 </h3>
                 <p className="text-xs text-neutral-500 mt-1">
-                  Formatos aceitos: JPG, PNG, fotos de smartphone e documentos
+                  Formatos aceitos: JPG, PNG, fotos de smartphone e documentos escaneados
                 </p>
               </div>
 
@@ -536,14 +550,14 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => loadSampleReceipt('Orbital Serv')}
+                    onClick={() => loadSampleReceipt('Orbital Serv', '07:22')}
                     className="px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg font-medium text-[11px] transition-colors cursor-pointer"
                   >
                     Exemplo 1 (Orbital)
                   </button>
                   <button
                     type="button"
-                    onClick={() => loadSampleReceipt('Swissport')}
+                    onClick={() => loadSampleReceipt('Swissport', '10:35')}
                     className="px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg font-medium text-[11px] transition-colors cursor-pointer"
                   >
                     Exemplo 2 (Swissport)
@@ -561,14 +575,14 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              Últimos Comprovantes Enviados ({recentRecords.length})
+              Últimos Comprovantes no Fluxo ({recentRecords.length})
             </h3>
             <button
               type="button"
               onClick={onSwitchToSpreadsheet}
               className="text-xs font-semibold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer"
             >
-              <span>Ver todos</span>
+              <span>Ver Planilha Base</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -586,11 +600,15 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                   </div>
                   <div className="truncate">
                     <div className="font-semibold text-neutral-800 truncate">
-                      {rec.fileName || `Comprovante #${rec.id.slice(-5)}`}
+                      {rec.cliente || 'WFS'} • OS #{rec.numero || rec.id.slice(-4)} ({rec.volume ? `${rec.volume} L` : '-'})
                     </div>
-                    <div className="text-[10px] text-neutral-500">
-                      {new Date(rec.dataCriacao).toLocaleDateString('pt-BR')} às{' '}
-                      {new Date(rec.dataCriacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    <div className="text-[10px] text-neutral-500 flex items-center gap-2">
+                      <span>Término: {rec.terminoAbastecimento || '-'}</span>
+                      <span>•</span>
+                      <span>
+                        {new Date(rec.dataCriacao).toLocaleDateString('pt-BR')} às{' '}
+                        {new Date(rec.dataCriacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -598,7 +616,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                 <div className="flex items-center space-x-2 shrink-0">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     <Check className="w-3 h-3" />
-                    Enviado
+                    Espelhado
                   </span>
                 </div>
               </div>

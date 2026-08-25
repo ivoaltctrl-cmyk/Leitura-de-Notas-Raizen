@@ -1,5 +1,15 @@
 import { AbastecimentoRecord } from '../types';
 
+export interface ProcessReceiptFlowResult {
+  sucesso: boolean;
+  mensagem: string;
+  record?: AbastecimentoRecord;
+  driveSuccess?: boolean;
+  driveFileId?: string;
+  driveUrl?: string;
+  sheetRowIndex?: number;
+}
+
 export interface UploadDriveResult {
   sucesso: boolean;
   mensagem: string;
@@ -13,8 +23,86 @@ export const DEFAULT_WEBHOOK_URL =
   '';
 
 /**
+ * Main Full-Stack Pipeline:
+ * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini 3.7) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ FRONT (Espelho)
+ */
+export async function processReceiptPipeline(
+  base64DataUrl: string,
+  fileName: string,
+  mimeType: string = 'image/jpeg',
+  webhookUrl?: string,
+  manualData?: Partial<AbastecimentoRecord>
+): Promise<ProcessReceiptFlowResult> {
+  const targetWebhookUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+  const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
+
+  try {
+    const response = await fetch('/api/process-receipt-flow', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        base64: cleanBase64,
+        mimeType: mimeType,
+        fileName: fileName,
+        webhookUrl: targetWebhookUrl,
+        manualData: manualData,
+      }),
+    });
+
+    const result = await response.json();
+    if (response.ok && result && result.sucesso) {
+      return {
+        sucesso: true,
+        mensagem: result.mensagem || 'Comprovante processado com sucesso!',
+        record: result.record,
+        driveSuccess: result.driveSuccess,
+        driveFileId: result.driveFileId,
+        driveUrl: result.driveFileUrl,
+        sheetRowIndex: result.sheetRowIndex,
+      };
+    } else {
+      return {
+        sucesso: false,
+        mensagem: result?.mensagem || 'Falha ao processar comprovante no servidor.',
+      };
+    }
+  } catch (error: any) {
+    console.error('Erro na chamada do fluxo /api/process-receipt-flow:', error);
+    return {
+      sucesso: false,
+      mensagem: `Erro de conexão com o servidor: ${error.message || 'Verifique sua conexão.'}`,
+    };
+  }
+}
+
+/**
+ * Tests connection with Google Apps Script Webhook (Google Drive + Google Sheets)
+ */
+export async function testGoogleIntegration(webhookUrl: string): Promise<{ sucesso: boolean; mensagem: string }> {
+  try {
+    const response = await fetch('/api/test-google-integration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl }),
+    });
+
+    const data = await response.json();
+    return {
+      sucesso: data.sucesso,
+      mensagem: data.mensagem || (data.sucesso ? 'Conexão confirmada!' : 'Falha no teste de conexão.'),
+    };
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      mensagem: `Erro de conexão: ${err.message}`,
+    };
+  }
+}
+
+/**
  * Sends image data to Google Apps Script Web App (doPost).
- * Tries server-side proxy first (if running fullstack); then falls back to direct browser fetch (including CORS/no-cors mode).
  */
 export async function uploadImageToGoogleDrive(
   webhookUrl: string,
@@ -23,23 +111,24 @@ export async function uploadImageToGoogleDrive(
   mimeType: string = 'image/jpeg'
 ): Promise<UploadDriveResult> {
   const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+  const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
 
   const payload = {
-    base64: base64DataUrl,
+    action: 'upload_and_record',
+    base64: cleanBase64,
     mimeType: mimeType,
     fileName: fileName || `NOTA_${Date.now()}.jpg`,
     timestamp: new Date().toISOString(),
   };
 
-  // If no webhook URL is defined at all, record locally as successfully queued/ready
   if (!targetUrl) {
     return {
       sucesso: true,
-      mensagem: 'Comprovante salvo no histórico local! (Adicione a URL do Apps Script no .env para envio automático à nuvem)',
+      mensagem: 'Comprovante salvo no histórico local! (Configure a URL do Apps Script para envio automático ao Drive e Sheets)',
     };
   }
 
-  // 1. Try via server proxy first (for backend fullstack)
+  // 1. Try via server proxy first
   try {
     const proxyRes = await fetch('/api/upload-drive-proxy', {
       method: 'POST',
@@ -69,7 +158,7 @@ export async function uploadImageToGoogleDrive(
           };
         }
       } catch {
-        // Fall through to direct fetch
+        // Fall through
       }
     }
   } catch (proxyError: any) {
@@ -81,7 +170,7 @@ export async function uploadImageToGoogleDrive(
     await fetch(targetUrl, {
       method: 'POST',
       body: JSON.stringify(payload),
-      mode: 'no-cors', // Crucial for Google Apps Script Web Apps when accessed from static sites (Cloudflare Pages)
+      mode: 'no-cors',
     });
 
     return {
@@ -95,26 +184,6 @@ export async function uploadImageToGoogleDrive(
       mensagem: `Erro na comunicação com o Google Drive: ${directError.message}`,
     };
   }
-}
-
-/**
- * Converts a File object to base64 string and data URL
- */
-export function fileToBase64(file: File): Promise<{ base64: string; dataUrl: string; mimeType: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-      resolve({
-        base64,
-        dataUrl,
-        mimeType: file.type || 'image/jpeg',
-      });
-    };
-    reader.onerror = (error) => reject(error);
-    reader.readAsDataURL(file);
-  });
 }
 
 /**
@@ -160,7 +229,6 @@ export async function compressImage(
             mimeType: 'image/jpeg',
           });
         } else {
-          // Fallback if canvas context fails
           const dataUrl = e.target?.result as string;
           const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
           resolve({

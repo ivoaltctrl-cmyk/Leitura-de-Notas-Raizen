@@ -15,6 +15,7 @@ import {
   Layers,
   ExternalLink,
   Clock,
+  Settings,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
 import { exportToExcelXLSX, exportToCSV, copyTableAsTSV } from '../utils/exportUtils';
@@ -25,6 +26,7 @@ interface SpreadsheetTabProps {
   onDeleteRecord: (id: string) => void;
   onOpenUploadTab: () => void;
   onPreviewReceipt: (record: AbastecimentoRecord) => void;
+  onOpenSettingsModal: () => void;
   gasConfig: GasConfig;
 }
 
@@ -32,6 +34,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
   records,
   onOpenUploadTab,
   onPreviewReceipt,
+  onOpenSettingsModal,
   gasConfig,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -152,6 +155,21 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
           {/* Action Tools */}
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={onOpenSettingsModal}
+              className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-neutral-200"
+              title="Configurar integração com Google Drive e Google Sheets"
+            >
+              <Settings className="w-3.5 h-3.5 text-neutral-600" />
+              <span>Configurar Drive</span>
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  gasConfig.webhookUrl ? 'bg-emerald-500' : 'bg-amber-500'
+                }`}
+              ></span>
+            </button>
+
             <button
               type="button"
               onClick={handleRefresh}
