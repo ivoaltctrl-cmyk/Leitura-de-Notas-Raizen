@@ -17,128 +17,17 @@ export interface UploadDriveResult {
   driveUrl?: string;
 }
 
+export interface FetchSheetRecordsResult {
+  sucesso: boolean;
+  mensagem: string;
+  records: AbastecimentoRecord[];
+  total: number;
+}
+
 // Default Webhook URL for Google Apps Script if not set via environment variable
 export const DEFAULT_WEBHOOK_URL =
   (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
   '';
-
-/**
- * Main Full-Stack Pipeline:
- * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini 3.7) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ FRONT (Espelho)
- */
-export async function processReceiptPipeline(
-  base64DataUrl: string,
-  fileName: string,
-  mimeType: string = 'image/jpeg',
-  webhookUrl?: string,
-  manualData?: Partial<AbastecimentoRecord>
-): Promise<ProcessReceiptFlowResult> {
-  const targetWebhookUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
-  const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
-
-  try {
-    const response = await fetch('/api/process-receipt-flow', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        base64: cleanBase64,
-        mimeType: mimeType,
-        fileName: fileName,
-        webhookUrl: targetWebhookUrl,
-        manualData: manualData,
-      }),
-    });
-
-    const result = await response.json();
-    if (response.ok && result && result.sucesso) {
-      return {
-        sucesso: true,
-        mensagem: result.mensagem || 'Comprovante processado com sucesso!',
-        record: result.record,
-        driveSuccess: result.driveSuccess,
-        driveFileId: result.driveFileId,
-        driveUrl: result.driveFileUrl,
-        sheetRowIndex: result.sheetRowIndex,
-      };
-    } else {
-      return {
-        sucesso: false,
-        mensagem: result?.mensagem || 'Falha ao processar comprovante no servidor.',
-      };
-    }
-  } catch (error: any) {
-    console.error('Erro na chamada do fluxo /api/process-receipt-flow:', error);
-    return {
-      sucesso: false,
-      mensagem: `Erro de conexão com o servidor: ${error.message || 'Verifique sua conexão.'}`,
-    };
-  }
-}
-
-/**
- * Tests connection with Google Apps Script Webhook (Google Drive)
- */
-export async function testGoogleIntegration(webhookUrl: string): Promise<{ sucesso: boolean; mensagem: string }> {
-  if (!webhookUrl || !webhookUrl.trim()) {
-    return {
-      sucesso: false,
-      mensagem: 'Por favor, cole a URL do seu Webhook do Apps Script.',
-    };
-  }
-
-  const cleanUrl = webhookUrl.trim();
-
-  // 1. Try testing via backend proxy
-  try {
-    const response = await fetch('/api/test-google-integration', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl: cleanUrl }),
-    });
-
-    const text = await response.text();
-    if (text) {
-      try {
-        const data = JSON.parse(text);
-        return {
-          sucesso: !!data.sucesso,
-          mensagem: data.mensagem || (data.sucesso ? 'Conexão confirmada com o Google Drive!' : 'Erro na resposta do Google.'),
-        };
-      } catch {
-        if (response.ok) {
-          return {
-            sucesso: true,
-            mensagem: 'Conexão confirmada com sucesso com o Webhook do Google Apps Script!',
-          };
-        }
-      }
-    }
-  } catch (err: any) {
-    console.warn('Proxy test failed, attempting direct fetch:', err);
-  }
-
-  // 2. Direct browser fallback test
-  try {
-    await fetch(cleanUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'ping_test' }),
-      mode: 'no-cors',
-    });
-
-    return {
-      sucesso: true,
-      mensagem: 'Conexão estabelecida com sucesso com o Google Apps Script!',
-    };
-  } catch (directErr: any) {
-    return {
-      sucesso: false,
-      mensagem: `Não foi possível conectar ao Google Apps Script: ${directErr.message || 'Verifique a URL informada'}`,
-    };
-  }
-}
 
 /**
  * Sends image data to Google Apps Script Web App (doPost).
@@ -217,6 +106,190 @@ export async function uploadImageToGoogleDrive(
     return {
       sucesso: false,
       mensagem: `Erro ao enviar para o Google Drive: ${directError.message}`,
+    };
+  }
+}
+
+/**
+ * Fetches real records directly from the Google Sheets spreadsheet via Google Apps Script Web App
+ */
+export async function fetchRecordsFromSheet(webhookUrl?: string): Promise<FetchSheetRecordsResult> {
+  const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+
+  if (!targetUrl) {
+    return {
+      sucesso: false,
+      mensagem: 'URL do Webhook do Google Apps Script não configurada nas Configurações.',
+      records: [],
+      total: 0,
+    };
+  }
+
+  // 1. Try fetching via server backend proxy first
+  try {
+    const res = await fetch('/api/fetch-sheet-records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: targetUrl }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data && data.records && Array.isArray(data.records)) {
+      return {
+        sucesso: true,
+        mensagem: data.mensagem || `Sincronizado com o Google Sheets (${data.records.length} registros).`,
+        records: data.records,
+        total: data.records.length,
+      };
+    }
+  } catch (err: any) {
+    console.warn('Backend proxy fetch failed, attempting direct fetch:', err);
+  }
+
+  // 2. Fallback direct browser GET
+  try {
+    const directRes = await fetch(targetUrl, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (directRes.ok) {
+      const json = await directRes.json();
+      if (json && json.records && Array.isArray(json.records)) {
+        return {
+          sucesso: true,
+          mensagem: 'Dados carregados da planilha com sucesso!',
+          records: json.records,
+          total: json.records.length,
+        };
+      }
+    }
+  } catch (directErr: any) {
+    console.error('Direct fetch from Google Apps Script failed:', directErr);
+  }
+
+  return {
+    sucesso: false,
+    mensagem: 'Não foi possível carregar registros do Google Sheets. Verifique a URL em Configurações.',
+    records: [],
+    total: 0,
+  };
+}
+
+/**
+ * Main Full-Stack Pipeline:
+ * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini 3.7) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ FRONT (Espelho)
+ */
+export async function processReceiptPipeline(
+  base64DataUrl: string,
+  fileName: string,
+  mimeType: string = 'image/jpeg',
+  webhookUrl?: string,
+  manualData?: Partial<AbastecimentoRecord>
+): Promise<ProcessReceiptFlowResult> {
+  const targetWebhookUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+  const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
+
+  try {
+    const response = await fetch('/api/process-receipt-flow', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        base64: cleanBase64,
+        mimeType: mimeType,
+        fileName: fileName,
+        webhookUrl: targetWebhookUrl,
+        manualData: manualData,
+      }),
+    });
+
+    const result = await response.json();
+    if (response.ok && result && result.sucesso) {
+      return {
+        sucesso: true,
+        mensagem: result.mensagem || 'Comprovante processado com sucesso!',
+        record: result.record,
+        driveSuccess: result.driveSuccess,
+        driveFileId: result.driveFileId,
+        driveUrl: result.driveFileUrl,
+        sheetRowIndex: result.sheetRowIndex,
+      };
+    } else {
+      return {
+        sucesso: false,
+        mensagem: result?.mensagem || 'Falha ao processar comprovante no servidor.',
+      };
+    }
+  } catch (error: any) {
+    console.error('Erro na chamada do fluxo /api/process-receipt-flow:', error);
+    return {
+      sucesso: false,
+      mensagem: `Erro de conexão com o servidor: ${error.message || 'Verifique sua conexão.'}`,
+    };
+  }
+}
+
+/**
+ * Tests connection with Google Apps Script Webhook (Google Drive / Sheets)
+ */
+export async function testGoogleIntegration(webhookUrl: string): Promise<{ sucesso: boolean; mensagem: string }> {
+  if (!webhookUrl || !webhookUrl.trim()) {
+    return {
+      sucesso: false,
+      mensagem: 'Por favor, cole a URL do seu Webhook do Apps Script.',
+    };
+  }
+
+  const cleanUrl = webhookUrl.trim();
+
+  // 1. Try testing via backend proxy
+  try {
+    const response = await fetch('/api/test-google-integration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: cleanUrl }),
+    });
+
+    const text = await response.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text);
+        return {
+          sucesso: !!data.sucesso,
+          mensagem: data.mensagem || (data.sucesso ? 'Conexão confirmada com o Google Drive e Sheets!' : 'Erro na resposta do Google.'),
+        };
+      } catch {
+        if (response.ok) {
+          return {
+            sucesso: true,
+            mensagem: 'Conexão confirmada com sucesso com o Webhook do Google Apps Script!',
+          };
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('Proxy test failed, attempting direct fetch:', err);
+  }
+
+  // 2. Direct browser fallback test
+  try {
+    await fetch(cleanUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'ping_test' }),
+      mode: 'no-cors',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Conexão estabelecida com sucesso com o Google Apps Script!',
+    };
+  } catch (directErr: any) {
+    return {
+      sucesso: false,
+      mensagem: `Não foi possível conectar ao Google Apps Script: ${directErr.message || 'Verifique a URL informada'}`,
     };
   }
 }

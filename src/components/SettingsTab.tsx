@@ -11,23 +11,31 @@ import {
   Lock,
   Unlock,
   LogOut,
-  ExternalLink,
   Code,
+  Trash2,
   FileSpreadsheet,
+  AlertTriangle,
 } from 'lucide-react';
-import { GasConfig } from '../types';
-import { testGoogleIntegration } from '../utils/driveService';
+import { GasConfig, AbastecimentoRecord } from '../types';
+import { testGoogleIntegration, fetchRecordsFromSheet } from '../utils/driveService';
 import { GOOGLE_APPS_SCRIPT_CODE } from '../utils/gasScriptTemplate';
 
 interface SettingsTabProps {
   gasConfig: GasConfig;
   onSaveConfig: (config: GasConfig) => void;
+  onClearAllRecords: () => void;
+  recordsCount: number;
 }
 
 const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
 const DEFAULT_PASSWORD = 'admin';
 
-export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfig }) => {
+export const SettingsTab: React.FC<SettingsTabProps> = ({
+  gasConfig,
+  onSaveConfig,
+  onClearAllRecords,
+  recordsCount,
+}) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('admin_session_auth') === 'true';
   });
@@ -42,11 +50,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
+  // Sheet test state
+  const [isTestingSheetRead, setIsTestingSheetRead] = useState(false);
+  const [sheetReadResult, setSheetReadResult] = useState<{ sucesso: boolean; mensagem: string; count?: number } | null>(null);
+
   // Change password state
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordChangeMsg, setPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Clear confirmation dialog
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearSuccessMsg, setClearSuccessMsg] = useState(false);
 
   useEffect(() => {
     setWebhookUrl(gasConfig.webhookUrl || '');
@@ -98,6 +114,42 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
     }
   };
 
+  const handleTestSheetRead = async () => {
+    if (!webhookUrl.trim()) {
+      setSheetReadResult({
+        sucesso: false,
+        mensagem: 'Insira a URL do Webhook do Google Apps Script antes de testar.',
+      });
+      return;
+    }
+
+    setIsTestingSheetRead(true);
+    setSheetReadResult(null);
+
+    try {
+      const result = await fetchRecordsFromSheet(webhookUrl.trim());
+      if (result.sucesso) {
+        setSheetReadResult({
+          sucesso: true,
+          mensagem: `Leitura da aba "Dados_Raizen" confirmada! Encontradas ${result.records.length} linha(s).`,
+          count: result.records.length,
+        });
+      } else {
+        setSheetReadResult({
+          sucesso: false,
+          mensagem: result.mensagem || 'Não foi possível ler as linhas da planilha.',
+        });
+      }
+    } catch (err: any) {
+      setSheetReadResult({
+        sucesso: false,
+        mensagem: `Erro ao consultar: ${err.message}`,
+      });
+    } finally {
+      setIsTestingSheetRead(false);
+    }
+  };
+
   const handleSaveSettings = () => {
     onSaveConfig({
       ...gasConfig,
@@ -141,6 +193,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
     }, 2000);
   };
 
+  const handleConfirmClearAll = () => {
+    onClearAllRecords();
+    setShowClearConfirm(false);
+    setClearSuccessMsg(true);
+    setTimeout(() => setClearSuccessMsg(false), 4000);
+  };
+
   // 1. Password Protection Gate
   if (!isAuthenticated) {
     return (
@@ -152,7 +211,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
             </div>
             <h2 className="text-lg font-bold text-neutral-900">Acesso Restrito - Administrador</h2>
             <p className="text-xs text-neutral-500 max-w-xs mx-auto">
-              Digite a senha de administrador para acessar as configurações de integração e parâmetros do sistema.
+              Digite a senha de administrador para acessar as configurações de integração, limpeza de dados e parâmetros do sistema.
             </p>
           </div>
 
@@ -300,16 +359,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
       )}
 
       {/* Main Google Integration Settings */}
-      <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-6 space-y-6">
+      <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-6 space-y-6">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
           <div className="flex items-center space-x-3">
             <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center font-bold">
               <HardDrive className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-neutral-900">Integração com Google Drive</h3>
+              <h3 className="text-sm font-bold text-neutral-900">Integração Google Drive e Google Sheets</h3>
               <p className="text-xs text-neutral-500">
-                URL do Web App do Google Apps Script responsável pelo armazenamento das fotos.
+                URL do Web App do Google Apps Script responsável pelo salvamento de fotos e sincronização com a aba Dados_Raizen.
               </p>
             </div>
           </div>
@@ -334,12 +393,23 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
               disabled={isTesting}
               className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 disabled:bg-neutral-400 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
             >
-              {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              <RefreshCw className={`w-4 h-4 ${isTesting ? 'animate-spin' : ''}`} />
               <span>{isTesting ? 'Testando...' : 'Testar Conexão'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleTestSheetRead}
+              disabled={isTestingSheetRead}
+              className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-neutral-400 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+              title="Testa a leitura da aba Dados_Raizen"
+            >
+              <FileSpreadsheet className={`w-4 h-4 ${isTestingSheetRead ? 'animate-spin' : ''}`} />
+              <span>{isTestingSheetRead ? 'Lendo Sheets...' : 'Testar Leitura Sheets'}</span>
             </button>
           </div>
           <p className="text-[11px] text-neutral-500">
-            Esta URL recebe as imagens capturadas pelo front e salva diretamente na pasta configurada no Drive.
+            Esta URL salva as fotos na pasta do Google Drive e sincroniza as linhas na aba <strong>Dados_Raizen</strong>.
           </p>
         </div>
 
@@ -366,6 +436,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
           </div>
         )}
 
+        {/* Sheet Read Test Status */}
+        {sheetReadResult && (
+          <div
+            className={`p-4 rounded-xl text-xs flex items-start space-x-2.5 ${
+              sheetReadResult.sucesso
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                : 'bg-red-50 border border-red-200 text-red-900'
+            }`}
+          >
+            {sheetReadResult.sucesso ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <span className="font-bold">
+                {sheetReadResult.sucesso ? 'Leitura bem-sucedida: ' : 'Falha na leitura: '}
+              </span>
+              <span>{sheetReadResult.mensagem}</span>
+            </div>
+          </div>
+        )}
+
         {/* Save Action */}
         <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -386,16 +479,94 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
         </div>
       </div>
 
+      {/* Danger Zone: Data Management (ADM Only) */}
+      <div className="bg-white rounded-2xl border border-red-200 shadow-xs p-6 space-y-4">
+        <div className="flex items-center space-x-3 pb-3 border-b border-red-100">
+          <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 flex items-center justify-center font-bold">
+            <Trash2 className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-neutral-900">Gerenciamento de Dados (Área do Administrador)</h3>
+            <p className="text-xs text-neutral-500">
+              Controle protegido contra exclusões acidentais por operadores.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-red-50/50 rounded-xl border border-red-100">
+          <div className="space-y-1">
+            <div className="text-xs font-bold text-neutral-800">
+              Limpar Todos os Registros do Aplicativo
+            </div>
+            <p className="text-[11px] text-neutral-600 max-w-lg">
+              Atualmente existem <strong>{recordsCount} registro(s)</strong> no cache do aplicativo. Esta ação limpa os dados da visualização local. (Os dados já enviados ao Google Sheets permanecem salvos na sua planilha online).
+            </p>
+          </div>
+
+          <button
+            type="button"
+            id="btn-limpar-tudo-adm"
+            onClick={() => setShowClearConfirm(true)}
+            className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Limpar Todos os Registros</span>
+          </button>
+        </div>
+
+        {clearSuccessMsg && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>Todos os registros locais foram limpos com sucesso!</span>
+          </div>
+        )}
+      </div>
+
+      {/* Clear Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-neutral-200 animate-scaleUp">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-neutral-900">Confirmar Limpeza Total</h3>
+              <p className="text-xs text-neutral-600">
+                Tem certeza que deseja apagar todos os <strong>{recordsCount} registro(s)</strong> da memória do aplicativo?
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearAll}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-xs"
+              >
+                Sim, Limpar Tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Script Source Code & Installation Guide */}
-      <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-6 space-y-4">
+      <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="w-8 h-8 rounded-lg bg-neutral-100 text-neutral-700 flex items-center justify-center font-bold">
               <Code className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-neutral-900">Código do Google Apps Script</h3>
-              <p className="text-xs text-neutral-500">Cole este script no editor do Google Apps Script.</p>
+              <h3 className="text-sm font-bold text-neutral-900">Código Atualizado do Google Apps Script</h3>
+              <p className="text-xs text-neutral-500">Com suporte completo a leitura da aba Dados_Raizen e gravação no Drive.</p>
             </div>
           </div>
 
@@ -416,13 +587,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ gasConfig, onSaveConfi
         </div>
 
         <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
-          <h4 className="text-xs font-bold text-neutral-800">Lembrete de Implantação no Google:</h4>
+          <h4 className="text-xs font-bold text-neutral-800">Instruções para o Google Apps Script:</h4>
           <ol className="text-xs text-neutral-600 space-y-1 pl-4 list-decimal">
-            <li>No Apps Script, clique em <strong>Implantar ➔ Nova implantação</strong>.</li>
-            <li>Selecione tipo <strong>App da Web</strong>.</li>
-            <li>Configure <strong>Executar como:</strong> <code>Eu (seu e-mail)</code>.</li>
-            <li>Configure <strong>Quem tem acesso:</strong> <code>Qualquer pessoa</code>.</li>
-            <li>Copie a URL gerada terminada em <code>/exec</code> e cole no campo acima.</li>
+            <li>Abra sua planilha do Google Sheets onde está a aba <strong>Dados_Raizen</strong>.</li>
+            <li>No menu superior, clique em <strong>Extensões ➔ Apps Script</strong>.</li>
+            <li>Substitua o código pelo script acima e clique em <strong>Salvar</strong>.</li>
+            <li>Clique em <strong>Implantar ➔ Nova implantação</strong> (ou Gerenciar implantações ➔ Nova versão).</li>
+            <li>Selecione tipo <strong>App da Web</strong>, configure <code>Quem tem acesso: Qualquer pessoa</code> e copie a URL gerada (terminada em <code>/exec</code>).</li>
+            <li>Cole a URL no campo acima e clique em <strong>Salvar Alterações</strong>.</li>
           </ol>
         </div>
       </div>

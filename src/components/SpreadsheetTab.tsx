@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Download,
@@ -15,16 +15,15 @@ import {
   Layers,
   ExternalLink,
   Clock,
-  Trash2,
+  AlertCircle,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
 import { exportToExcelXLSX, exportToCSV, copyTableAsTSV } from '../utils/exportUtils';
+import { fetchRecordsFromSheet } from '../utils/driveService';
 
 interface SpreadsheetTabProps {
   records: AbastecimentoRecord[];
-  onUpdateRecord: (updated: AbastecimentoRecord) => void;
-  onDeleteRecord: (id: string) => void;
-  onClearAllRecords?: () => void;
+  onSetRecords: (records: AbastecimentoRecord[]) => void;
   onOpenUploadTab: () => void;
   onPreviewReceipt: (record: AbastecimentoRecord) => void;
   gasConfig: GasConfig;
@@ -32,16 +31,17 @@ interface SpreadsheetTabProps {
 
 export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
   records,
-  onDeleteRecord,
-  onClearAllRecords,
+  onSetRecords,
   onOpenUploadTab,
   onPreviewReceipt,
+  gasConfig,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<string>('TODOS');
   const [selectedPayment, setSelectedPayment] = useState<string>('TODOS');
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ type: 'success' | 'error' | 'info'; msg: string } | null>(null);
 
   // Available unique products and payment methods for filters
   const uniqueProducts = useMemo(() => {
@@ -106,19 +106,65 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
     return set.size;
   }, [filteredRecords]);
 
+  // Fetch real data from Google Sheets when user clicks Atualizar
+  const handleSyncFromGoogleSheets = async () => {
+    if (!gasConfig.webhookUrl) {
+      setSyncStatus({
+        type: 'info',
+        msg: 'Configure a URL do Webhook do Google Apps Script na guia Configurações (ADM) para sincronizar com a planilha online.',
+      });
+      setTimeout(() => setSyncStatus(null), 6000);
+      return;
+    }
+
+    setIsRefreshing(true);
+    setSyncStatus(null);
+
+    try {
+      const result = await fetchRecordsFromSheet(gasConfig.webhookUrl);
+      if (result.sucesso && result.records) {
+        if (result.records.length > 0) {
+          onSetRecords(result.records);
+          setSyncStatus({
+            type: 'success',
+            msg: `Planilha sincronizada! ${result.records.length} linha(s) carregada(s) de Dados_Raizen.`,
+          });
+        } else {
+          setSyncStatus({
+            type: 'info',
+            msg: 'Conexão efetuada com sucesso: a planilha online ainda não possui lançamentos preenchidos.',
+          });
+        }
+      } else {
+        setSyncStatus({
+          type: 'error',
+          msg: result.mensagem || 'Falha ao buscar dados do Google Sheets.',
+        });
+      }
+    } catch (err: any) {
+      setSyncStatus({
+        type: 'error',
+        msg: `Erro de conexão: ${err.message || 'Verifique a URL em Configurações'}`,
+      });
+    } finally {
+      setIsRefreshing(false);
+      setTimeout(() => setSyncStatus(null), 5000);
+    }
+  };
+
+  // Auto-sync on initial mount if webhook configured
+  useEffect(() => {
+    if (gasConfig.webhookUrl && records.length === 0) {
+      handleSyncFromGoogleSheets();
+    }
+  }, [gasConfig.webhookUrl]);
+
   const handleCopyTSV = async () => {
     const ok = await copyTableAsTSV(filteredRecords);
     if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
-  };
-
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 500);
   };
 
   const handlePrint = () => {
@@ -143,30 +189,33 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               </h2>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Produção WFS
+                Operação Raízen
               </span>
             </div>
             <p className="text-xs text-neutral-500">
-              Registros operacionais sincronizados com a planilha Google Sheets da operação Raízen.
+              Visualização fiel da planilha Google Sheets (Aba: Dados_Raizen).
             </p>
           </div>
 
           {/* Action Tools */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Primary Sincronizar / Atualizar Button */}
             <button
               type="button"
-              onClick={handleRefresh}
-              className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-              title="Atualizar tabela"
+              id="btn-atualizar-sheets"
+              onClick={handleSyncFromGoogleSheets}
+              disabled={isRefreshing}
+              className="px-3.5 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:bg-neutral-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Buscar dados atualizados diretamente da planilha Google Sheets"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-red-600' : ''}`} />
-              <span>{isRefreshing ? 'Atualizando...' : 'Atualizar'}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isRefreshing ? 'Sincronizando Sheets...' : 'Atualizar Planilha'}</span>
             </button>
 
             <button
               type="button"
               onClick={handleCopyTSV}
-              className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              className="px-2.5 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
               title="Copiar dados para colar no Excel ou Google Sheets"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -176,7 +225,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              className="px-2.5 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
               title="Imprimir visualização"
             >
               <Printer className="w-3.5 h-3.5" />
@@ -188,7 +237,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               type="button"
               id="btn-download-excel"
               onClick={() => exportToExcelXLSX(filteredRecords)}
-              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Baixar Excel</span>
@@ -199,25 +248,35 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               type="button"
               id="btn-download-csv"
               onClick={() => exportToCSV(filteredRecords)}
-              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-900 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+              className="px-3 py-2 bg-neutral-800 hover:bg-neutral-900 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>CSV</span>
             </button>
-
-            {onClearAllRecords && records.length > 0 && (
-              <button
-                type="button"
-                onClick={onClearAllRecords}
-                className="px-2.5 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer border border-transparent hover:border-red-200"
-                title="Limpar todos os registros salvos"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Limpar Tudo</span>
-              </button>
-            )}
           </div>
         </div>
+
+        {/* Sync Feedback Toast Banner */}
+        {syncStatus && (
+          <div
+            className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+              syncStatus.type === 'success'
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                : syncStatus.type === 'error'
+                ? 'bg-red-50 border border-red-200 text-red-800'
+                : 'bg-blue-50 border border-blue-200 text-blue-800'
+            }`}
+          >
+            {syncStatus.type === 'success' ? (
+              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : syncStatus.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            ) : (
+              <HardDrive className="w-4 h-4 text-blue-600 shrink-0" />
+            )}
+            <span className="font-semibold">{syncStatus.msg}</span>
+          </div>
+        )}
 
         {/* Metric Badges */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -229,7 +288,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
             <div className="text-base sm:text-lg font-black text-neutral-900 font-mono">
               {totalVolume > 0
                 ? `${totalVolume.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`
-                : 'Salvo no Drive'}
+                : `${filteredRecords.length} reg.`}
             </div>
           </div>
 
@@ -260,7 +319,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
             </span>
             <div className="text-xs font-bold text-emerald-700 flex items-center gap-1.5 mt-0.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              {records.filter((r) => r.statusEnvio === 'enviado_drive' || r.driveFileId).length} enviado(s) ao Drive
+              {gasConfig.webhookUrl ? 'Google Sheets Conectado' : 'Modo Offline'}
             </div>
           </div>
         </div>
@@ -328,7 +387,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               }}
               className="px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-xl font-bold transition-colors cursor-pointer"
             >
-              Limpar
+              Limpar Filtros
             </button>
           )}
         </div>
@@ -359,19 +418,28 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
             </div>
             <p className="text-xs text-neutral-500 max-w-sm mx-auto">
               {records.length === 0
-                ? 'Tire uma foto do comprovante na aba "Captura de Nota" para registrar o primeiro abastecimento.'
+                ? 'Clique no botão "Atualizar Planilha" acima para sincronizar com o Google Sheets ou tire uma foto na aba "Captura de Nota".'
                 : 'Tente redefinir os filtros de busca para visualizar os registros.'}
             </p>
-            {records.length === 0 && (
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleSyncFromGoogleSheets}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Atualizar Planilha</span>
+              </button>
+
               <button
                 type="button"
                 onClick={onOpenUploadTab}
-                className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
               >
                 <Camera className="w-4 h-4" />
                 <span>Capturar Nova Nota</span>
               </button>
-            )}
+            </div>
           </div>
         ) : (
           <div className="w-full overflow-x-auto">
@@ -391,8 +459,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">H</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">I</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">J</th>
-                  <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">K</th>
-                  <th className="py-0.5 px-1 text-center w-7"></th>
+                  <th className="py-0.5 px-1.5 text-center">K</th>
                 </tr>
 
                 {/* Primary Red Header Row */}
@@ -456,12 +523,9 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                   </th>
 
                   {/* Col K: Foto da Nota */}
-                  <th className="py-2 px-1.5 text-center border-r border-red-700 whitespace-nowrap">
+                  <th className="py-2 px-1.5 text-center whitespace-nowrap">
                     Foto da Nota
                   </th>
-
-                  {/* Quick Action Delete */}
-                  <th className="py-2 px-1 text-center w-7"></th>
                 </tr>
               </thead>
 
@@ -469,7 +533,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               <tbody className="divide-y divide-neutral-200 bg-white">
                 {filteredRecords.map((r, index) => (
                   <tr
-                    key={r.id}
+                    key={r.id || `row-${index}`}
                     className="hover:bg-red-50/40 transition-colors group"
                   >
                     {/* Row Index */}
@@ -557,7 +621,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                     </td>
 
                     {/* Col K: Foto da Nota */}
-                    <td className="py-2 px-1.5 text-center border-r border-neutral-100 whitespace-nowrap">
+                    <td className="py-2 px-1.5 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
                         {r.fotoBase64 ? (
                           <button
@@ -569,38 +633,21 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                             <Eye className="w-3 h-3" />
                             <span>Ver</span>
                           </button>
-                        ) : (
-                          <span className="text-neutral-400 text-[10px]">-</span>
-                        )}
-
-                        {r.driveFileUrl && (
+                        ) : r.driveFileUrl ? (
                           <a
                             href={r.driveFileUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md text-[10px] font-semibold transition-colors"
                             title="Abrir no Google Drive"
                           >
                             <ExternalLink className="w-3 h-3" />
+                            <span>Drive</span>
                           </a>
+                        ) : (
+                          <span className="text-neutral-400 text-[10px]">-</span>
                         )}
                       </div>
-                    </td>
-
-                    {/* Row Delete Action */}
-                    <td className="py-2 px-1 text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm('Deseja excluir este lançamento da lista?')) {
-                            onDeleteRecord(r.id);
-                          }
-                        }}
-                        className="p-1 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
-                        title="Excluir lançamento"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
                     </td>
                   </tr>
                 ))}
@@ -620,7 +667,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                       ? `${totalVolume.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`
                       : '-'}
                   </td>
-                  <td colSpan={4} className="py-2.5 px-2 text-neutral-500 text-[10px]">
+                  <td colSpan={3} className="py-2.5 px-2 text-neutral-500 text-[10px]">
                     Operação WFS / Raízen
                   </td>
                 </tr>

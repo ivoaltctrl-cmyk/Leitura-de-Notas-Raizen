@@ -181,7 +181,7 @@ app.post('/api/process-receipt-flow', async (req, res) => {
       extractedData = {
         numero: `OS-${Date.now().toString().slice(-6)}`,
         formaPagamento: 'CONTRATO',
-        cliente: 'WFS AEROPORTO',
+        cliente: 'WFS / RAÍZEN',
         horaChegada: timeStr,
         inicioAbastecimento: timeStr,
         terminoAbastecimento: timeStr,
@@ -262,7 +262,7 @@ app.post('/api/process-receipt-flow', async (req, res) => {
       id: recordId,
       numero: extractedData.numero || `OS-${Date.now().toString().slice(-4)}`,
       formaPagamento: extractedData.formaPagamento || 'CONTRATO',
-      cliente: extractedData.cliente || 'WFS AEROPORTO',
+      cliente: extractedData.cliente || 'WFS / RAÍZEN',
       horaChegada: extractedData.horaChegada || '',
       inicioAbastecimento: extractedData.inicioAbastecimento || '',
       terminoAbastecimento: extractedData.terminoAbastecimento || '',
@@ -298,6 +298,74 @@ app.post('/api/process-receipt-flow', async (req, res) => {
   }
 });
 
+// Endpoint to fetch real rows directly from Google Sheets via Google Apps Script
+app.post('/api/fetch-sheet-records', async (req, res) => {
+  try {
+    const { webhookUrl } = req.body;
+    const targetUrl =
+      webhookUrl?.trim() ||
+      process.env.GOOGLE_APPS_SCRIPT_URL ||
+      process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
+
+    if (!targetUrl) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'URL do Google Apps Script não configurada nas Configurações.',
+        records: [],
+      });
+    }
+
+    // 1. Try GET request first (standard Google Apps Script doGet)
+    try {
+      const gasResponse = await fetch(targetUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        redirect: 'follow',
+      });
+
+      const gasText = await gasResponse.text();
+      try {
+        const gasJson = JSON.parse(gasText);
+        if (gasJson.records && Array.isArray(gasJson.records)) {
+          return res.json({
+            sucesso: true,
+            mensagem: gasJson.mensagem || `Planilha sincronizada (${gasJson.records.length} registros)`,
+            records: gasJson.records,
+          });
+        }
+      } catch {
+        // Fall through to POST
+      }
+    } catch (getErr) {
+      console.warn('GET request to Apps Script failed, falling back to POST:', getErr);
+    }
+
+    // 2. Fallback POST with action: 'get_sheet_data'
+    const postResponse = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'get_sheet_data' }),
+      redirect: 'follow',
+    });
+
+    const postText = await postResponse.text();
+    const postJson = JSON.parse(postText);
+
+    return res.json({
+      sucesso: postJson.sucesso !== false,
+      mensagem: postJson.mensagem || 'Planilha sincronizada!',
+      records: postJson.records || [],
+    });
+  } catch (err: any) {
+    console.error('Erro ao buscar dados da planilha:', err);
+    res.status(500).json({
+      sucesso: false,
+      mensagem: `Erro ao sincronizar com o Google Sheets: ${err.message}`,
+      records: [],
+    });
+  }
+});
+
 // Endpoint to test Google Apps Script Webhook
 app.post('/api/test-google-integration', async (req, res) => {
   try {
@@ -316,7 +384,6 @@ app.post('/api/test-google-integration', async (req, res) => {
       timestamp: new Date().toISOString(),
     };
 
-    // Google Apps Script redirects (302) on POST to an execution output URL.
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
@@ -331,7 +398,6 @@ app.post('/api/test-google-integration', async (req, res) => {
     try {
       responseData = JSON.parse(responseText);
     } catch {
-      // If response is HTML from Google or plain text, analyze
       if (response.ok) {
         responseData = {
           sucesso: true,
@@ -349,7 +415,7 @@ app.post('/api/test-google-integration', async (req, res) => {
 
     res.json({
       sucesso: isSuccess,
-      mensagem: responseData?.mensagem || (isSuccess ? 'Conexão confirmada com o Google Drive!' : 'Falha na resposta do Google Apps Script.'),
+      mensagem: responseData?.mensagem || (isSuccess ? 'Conexão confirmada com o Google Drive e Sheets!' : 'Falha na resposta do Google Apps Script.'),
       raw: responseData,
     });
   } catch (error: any) {
@@ -381,7 +447,6 @@ app.post('/api/upload-drive-proxy', async (req, res) => {
       });
     }
 
-    // Call user's Google Apps Script doPost endpoint with text/plain to prevent CORS preflight issues
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {

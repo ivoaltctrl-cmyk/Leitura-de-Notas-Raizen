@@ -13,17 +13,15 @@ const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet' | 'settings'>('upload');
 
-  // Load records from localStorage, automatically purging any legacy mock demo records (e.g. rec-1, rec-2)
+  // Load records from localStorage
   const [records, setRecords] = useState<AbastecimentoRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
       if (saved) {
         const parsed: AbastecimentoRecord[] = JSON.parse(saved);
-        // Retain only real user-created records, filter out mock records
-        const realRecords = parsed.filter(
-          (r) => r.id && !r.id.startsWith('rec-')
-        );
-        return realRecords;
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
       }
     } catch (e) {
       console.error('Erro ao ler registros do localStorage:', e);
@@ -36,7 +34,7 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.webhookUrl) return parsed;
+        if (parsed && typeof parsed === 'object') return parsed;
       }
     } catch (e) {
       console.error('Erro ao ler config do localStorage:', e);
@@ -72,22 +70,16 @@ export default function App() {
     setRecords((prev) => [newRecord, ...prev]);
   };
 
-  const handleUpdateRecord = (updated: AbastecimentoRecord) => {
-    setRecords((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-  };
-
-  const handleDeleteRecord = (id: string) => {
-    setRecords((prev) => prev.filter((r) => r.id !== id));
+  const handleSetRecords = (newRecords: AbastecimentoRecord[]) => {
+    setRecords(newRecords);
   };
 
   const handleClearAllRecords = () => {
-    if (window.confirm('Tem certeza de que deseja limpar todos os registros salvos localmente?')) {
-      setRecords([]);
-      try {
-        localStorage.removeItem(STORAGE_KEY_RECORDS);
-      } catch (e) {
-        console.error('Erro ao limpar localStorage:', e);
-      }
+    setRecords([]);
+    try {
+      localStorage.removeItem(STORAGE_KEY_RECORDS);
+    } catch (e) {
+      console.error('Erro ao limpar localStorage:', e);
     }
   };
 
@@ -100,7 +92,7 @@ export default function App() {
         recordCount={records.length}
       />
 
-      {/* Main Container - Full-width optimized to eliminate horizontal scrollbar on desktops */}
+      {/* Main Container - Full-width optimized without horizontal scrollbar */}
       <main className="flex-1 w-full max-w-[1750px] mx-auto px-2.5 sm:px-4 lg:px-6 py-4">
         {activeTab === 'upload' && (
           <UploadReceiptTab
@@ -114,9 +106,7 @@ export default function App() {
         {activeTab === 'spreadsheet' && (
           <SpreadsheetTab
             records={records}
-            onUpdateRecord={handleUpdateRecord}
-            onDeleteRecord={handleDeleteRecord}
-            onClearAllRecords={handleClearAllRecords}
+            onSetRecords={handleSetRecords}
             onOpenUploadTab={() => setActiveTab('upload')}
             onPreviewReceipt={(rec) => setPreviewRecord(rec)}
             gasConfig={gasConfig}
@@ -127,6 +117,8 @@ export default function App() {
           <SettingsTab
             gasConfig={gasConfig}
             onSaveConfig={handleSaveGasConfig}
+            onClearAllRecords={handleClearAllRecords}
+            recordsCount={records.length}
           />
         )}
       </main>
