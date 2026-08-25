@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { UploadReceiptTab } from './components/UploadReceiptTab';
 import { SpreadsheetTab } from './components/SpreadsheetTab';
@@ -6,22 +6,20 @@ import { SettingsTab } from './components/SettingsTab';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { AbastecimentoRecord, GasConfig } from './types';
 import { INITIAL_RECORDS } from './data/sampleReceipts';
-import { fetchGlobalConfig, saveGlobalConfig, fetchRecordsFromSheet, clearServerRecords } from './utils/driveService';
 
 const STORAGE_KEY_RECORDS = 'abastecimento_records_v1';
 const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet' | 'settings'>('upload');
-  const [isInitialSyncDone, setIsInitialSyncDone] = useState(false);
 
-  // Local state initialized with fallback from localStorage
+  // Load records from localStorage
   const [records, setRecords] = useState<AbastecimentoRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
       if (saved) {
         const parsed: AbastecimentoRecord[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       }
@@ -49,7 +47,7 @@ export default function App() {
 
   const [previewRecord, setPreviewRecord] = useState<AbastecimentoRecord | null>(null);
 
-  // Sync records to localStorage as backup
+  // Sync records to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
@@ -58,92 +56,31 @@ export default function App() {
     }
   }, [records]);
 
-  // Master synchronization function across all computers
-  const syncWithServerAndSheets = useCallback(async (forcedWebhookUrl?: string) => {
-    const activeUrl = forcedWebhookUrl || gasConfig.webhookUrl;
-
-    // 1. Fetch shared global config from backend server
-    const serverConfig = await fetchGlobalConfig();
-    if (serverConfig && serverConfig.webhookUrl) {
-      setGasConfig(serverConfig);
-      try {
-        localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(serverConfig));
-      } catch (e) {}
-    }
-
-    const effectiveUrl = serverConfig?.webhookUrl || activeUrl;
-
-    // 2. Fetch live data from Google Sheets / central server
-    try {
-      const result = await fetchRecordsFromSheet(effectiveUrl);
-      if (result.sucesso && Array.isArray(result.records) && result.records.length > 0) {
-        setRecords(result.records);
-      }
-    } catch (err) {
-      console.warn('Erro na sincronização em background:', err);
-    } finally {
-      setIsInitialSyncDone(true);
-    }
-  }, [gasConfig.webhookUrl]);
-
-  // Initial load sync
-  useEffect(() => {
-    syncWithServerAndSheets();
-  }, []);
-
-  // Periodic multi-device synchronization (every 25 seconds or on window focus)
-  useEffect(() => {
-    const handleFocus = () => {
-      syncWithServerAndSheets();
-    };
-
-    window.addEventListener('focus', handleFocus);
-
-    const interval = setInterval(() => {
-      // Background sync to ensure all PCs see new receipts
-      syncWithServerAndSheets();
-    }, 25000);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      clearInterval(interval);
-    };
-  }, [syncWithServerAndSheets]);
-
-  // Sync gasConfig to server & localStorage
-  const handleSaveGasConfig = async (newConfig: GasConfig) => {
+  // Sync gasConfig to localStorage
+  const handleSaveGasConfig = (newConfig: GasConfig) => {
     setGasConfig(newConfig);
     try {
       localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(newConfig));
     } catch (e) {
       console.error('Erro ao salvar config no localStorage:', e);
     }
-
-    // Persist on central server so all other computers get this webhookUrl
-    await saveGlobalConfig(newConfig);
-
-    // Immediately trigger a sync with Google Sheets
-    if (newConfig.webhookUrl) {
-      await syncWithServerAndSheets(newConfig.webhookUrl);
-    }
   };
 
   const handleAddRecord = (newRecord: AbastecimentoRecord) => {
-    setRecords((prev) => [newRecord, ...prev.filter((r) => r.id !== newRecord.id)]);
+    setRecords((prev) => [newRecord, ...prev]);
   };
 
   const handleSetRecords = (newRecords: AbastecimentoRecord[]) => {
     setRecords(newRecords);
   };
 
-  const handleClearAllRecords = async () => {
+  const handleClearAllRecords = () => {
     setRecords([]);
     try {
       localStorage.removeItem(STORAGE_KEY_RECORDS);
     } catch (e) {
       console.error('Erro ao limpar localStorage:', e);
     }
-    await clearServerRecords();
   };
 
   return (
@@ -161,10 +98,7 @@ export default function App() {
           <UploadReceiptTab
             gasConfig={gasConfig}
             onAddRecord={handleAddRecord}
-            onSwitchToSpreadsheet={() => {
-              setActiveTab('spreadsheet');
-              syncWithServerAndSheets();
-            }}
+            onSwitchToSpreadsheet={() => setActiveTab('spreadsheet')}
             recentRecords={records}
           />
         )}

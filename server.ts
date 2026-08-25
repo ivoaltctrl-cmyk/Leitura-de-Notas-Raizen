@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -9,64 +8,6 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-
-// Storage file paths for multi-user server-side persistence
-const CONFIG_FILE_PATH = path.join(process.cwd(), '.app-config.json');
-const RECORDS_FILE_PATH = path.join(process.cwd(), '.app-records.json');
-
-// Helper to read/write persistent config on server
-function loadServerConfig(): { webhookUrl: string; autoUploadToDrive: boolean } {
-  try {
-    if (fs.existsSync(CONFIG_FILE_PATH)) {
-      const data = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
-      const parsed = JSON.parse(data);
-      return {
-        webhookUrl: parsed.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL || '',
-        autoUploadToDrive: parsed.autoUploadToDrive !== false,
-      };
-    }
-  } catch (e) {
-    console.error('[Server] Erro ao carregar config:', e);
-  }
-  return {
-    webhookUrl: process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL || '',
-    autoUploadToDrive: true,
-  };
-}
-
-function saveServerConfig(cfg: { webhookUrl: string; autoUploadToDrive?: boolean }) {
-  try {
-    fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('[Server] Erro ao salvar config:', e);
-  }
-}
-
-// Helper to read/write persistent records on server
-function loadServerRecords(): any[] {
-  try {
-    if (fs.existsSync(RECORDS_FILE_PATH)) {
-      const data = fs.readFileSync(RECORDS_FILE_PATH, 'utf-8');
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.error('[Server] Erro ao carregar registros:', e);
-  }
-  return [];
-}
-
-function saveServerRecords(recs: any[]) {
-  try {
-    fs.writeFileSync(RECORDS_FILE_PATH, JSON.stringify(recs, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('[Server] Erro ao salvar registros:', e);
-  }
-}
-
-// In-memory runtime state (backed by files)
-let currentConfig = loadServerConfig();
-let currentRecords = loadServerRecords();
 
 // High body limit for base64 high-resolution photo uploads
 app.use(express.json({ limit: '60mb' }));
@@ -93,110 +34,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Config endpoints for multi-user / multi-device synchronization
-app.get('/api/config', (req, res) => {
-  res.json({
-    sucesso: true,
-    webhookUrl: currentConfig.webhookUrl,
-    autoUploadToDrive: currentConfig.autoUploadToDrive,
-  });
-});
-
-app.post('/api/config', (req, res) => {
-  const { webhookUrl, autoUploadToDrive } = req.body;
-  currentConfig = {
-    webhookUrl: typeof webhookUrl === 'string' ? webhookUrl.trim() : currentConfig.webhookUrl,
-    autoUploadToDrive: typeof autoUploadToDrive === 'boolean' ? autoUploadToDrive : currentConfig.autoUploadToDrive,
-  };
-  saveServerConfig(currentConfig);
-  console.log('[Server] Configuração global atualizada:', currentConfig.webhookUrl ? 'Webhook configurado' : 'Sem Webhook');
-  res.json({
-    sucesso: true,
-    mensagem: 'Configurações salvas e compartilhadas globalmente para todos os computadores.',
-    config: currentConfig,
-  });
-});
-
-// Records endpoints for multi-device synchronization
-app.get('/api/records', async (req, res) => {
-  // If we have a webhookUrl, attempt live sync from Google Sheets
-  if (currentConfig.webhookUrl) {
-    try {
-      const liveRecords = await fetchFromGoogleSheets(currentConfig.webhookUrl);
-      if (liveRecords && liveRecords.length > 0) {
-        currentRecords = liveRecords;
-        saveServerRecords(currentRecords);
-        return res.json({
-          sucesso: true,
-          origem: 'google_sheets',
-          records: currentRecords,
-          total: currentRecords.length,
-        });
-      }
-    } catch (err: any) {
-      console.warn('[Server] Falha ao sincronizar ao vivo do Google Sheets, usando cache do servidor:', err.message);
-    }
-  }
-
-  return res.json({
-    sucesso: true,
-    origem: 'server_cache',
-    records: currentRecords,
-    total: currentRecords.length,
-  });
-});
-
-app.post('/api/records/clear', (req, res) => {
-  currentRecords = [];
-  saveServerRecords([]);
-  res.json({ sucesso: true, mensagem: 'Registros limpos no servidor para todos os usuários.' });
-});
-
-/**
- * Fetch rows directly from Google Apps Script Web App
- */
-async function fetchFromGoogleSheets(targetUrl: string): Promise<any[]> {
-  const cleanUrl = targetUrl.trim();
-  if (!cleanUrl) return [];
-
-  // 1. Try GET
-  try {
-    const gasResponse = await fetch(cleanUrl, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      redirect: 'follow',
-    });
-
-    const gasText = await gasResponse.text();
-    const gasJson = JSON.parse(gasText);
-    if (gasJson && gasJson.records && Array.isArray(gasJson.records)) {
-      return gasJson.records;
-    }
-  } catch (getErr: any) {
-    console.warn('[Server] GET fetchFromGoogleSheets falhou, tentando POST:', getErr.message);
-  }
-
-  // 2. Try POST with get_sheet_data
-  try {
-    const postResponse = await fetch(cleanUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'get_sheet_data' }),
-      redirect: 'follow',
-    });
-
-    const postText = await postResponse.text();
-    const postJson = JSON.parse(postText);
-    if (postJson && postJson.records && Array.isArray(postJson.records)) {
-      return postJson.records;
-    }
-  } catch (postErr: any) {
-    console.error('[Server] POST fetchFromGoogleSheets falhou:', postErr.message);
-  }
-
-  return [];
-}
-
 /**
  * Extraction prompt for Gemini Vision to extract all 11 fields for the Raízen Sheet:
  * A: Número
@@ -204,7 +41,7 @@ async function fetchFromGoogleSheets(targetUrl: string): Promise<any[]> {
  * C: Cliente
  * D: Hora da Chegada
  * E: Início do Abastecimento
- * F: Término do Abastecimento
+ * F: Término do Abastecimento (CRITICAL)
  * G: Produto
  * H: Volume
  * I: Obs.:
@@ -310,7 +147,7 @@ app.post('/api/extract-receipt', async (req, res) => {
 
 /**
  * Complete Full-Stack Pipeline Endpoint:
- * FRONT (Foto) ➡️ DRIVER (Upload no Google Drive) ➡️ BACK (Extração IA Gemini) ➡️ SHEETS (Gravação na aba Dados_Raizen) ➡️ MULTI-PC SYNC
+ * FRONT (Foto) ➡️ DRIVER (Upload no Google Drive) ➡️ BACK (Extração IA Gemini) ➡️ SHEETS (Gravação na aba Dados_Raizen) ➡️ FRONT (Espelhamento)
  */
 app.post('/api/process-receipt-flow', async (req, res) => {
   try {
@@ -322,7 +159,6 @@ app.post('/api/process-receipt-flow', async (req, res) => {
 
     const effectiveWebhookUrl =
       webhookUrl?.trim() ||
-      currentConfig.webhookUrl ||
       process.env.GOOGLE_APPS_SCRIPT_URL ||
       process.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
       '';
@@ -387,7 +223,7 @@ app.post('/api/process-receipt-flow', async (req, res) => {
 
         const gasResponse = await fetch(effectiveWebhookUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payloadToAppsScript),
           redirect: 'follow',
         });
@@ -444,10 +280,6 @@ app.post('/api/process-receipt-flow', async (req, res) => {
       statusMsg: pipelineMessage,
     };
 
-    // Save to server-side shared cache
-    currentRecords = [consolidatedRecord, ...currentRecords.filter((r) => r.id !== consolidatedRecord.id)];
-    saveServerRecords(currentRecords);
-
     res.json({
       sucesso: true,
       mensagem: pipelineMessage,
@@ -472,7 +304,6 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
     const { webhookUrl } = req.body;
     const targetUrl =
       webhookUrl?.trim() ||
-      currentConfig.webhookUrl ||
       process.env.GOOGLE_APPS_SCRIPT_URL ||
       process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
@@ -480,32 +311,57 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
       return res.status(400).json({
         sucesso: false,
         mensagem: 'URL do Google Apps Script não configurada nas Configurações.',
-        records: currentRecords,
+        records: [],
       });
     }
 
-    const records = await fetchFromGoogleSheets(targetUrl);
-    if (records && records.length > 0) {
-      currentRecords = records;
-      saveServerRecords(currentRecords);
-      return res.json({
-        sucesso: true,
-        mensagem: `Planilha sincronizada! ${records.length} linha(s) carregada(s) do Google Sheets.`,
-        records: records,
+    // 1. Try GET request first (standard Google Apps Script doGet)
+    try {
+      const gasResponse = await fetch(targetUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        redirect: 'follow',
       });
+
+      const gasText = await gasResponse.text();
+      try {
+        const gasJson = JSON.parse(gasText);
+        if (gasJson.records && Array.isArray(gasJson.records)) {
+          return res.json({
+            sucesso: true,
+            mensagem: gasJson.mensagem || `Planilha sincronizada (${gasJson.records.length} registros)`,
+            records: gasJson.records,
+          });
+        }
+      } catch {
+        // Fall through to POST
+      }
+    } catch (getErr) {
+      console.warn('GET request to Apps Script failed, falling back to POST:', getErr);
     }
+
+    // 2. Fallback POST with action: 'get_sheet_data'
+    const postResponse = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'get_sheet_data' }),
+      redirect: 'follow',
+    });
+
+    const postText = await postResponse.text();
+    const postJson = JSON.parse(postText);
 
     return res.json({
-      sucesso: true,
-      mensagem: 'Planilha conectada (nenhum registro encontrado na aba Dados_Raizen ainda).',
-      records: [],
+      sucesso: postJson.sucesso !== false,
+      mensagem: postJson.mensagem || 'Planilha sincronizada!',
+      records: postJson.records || [],
     });
   } catch (err: any) {
     console.error('Erro ao buscar dados da planilha:', err);
     res.status(500).json({
       sucesso: false,
       mensagem: `Erro ao sincronizar com o Google Sheets: ${err.message}`,
-      records: currentRecords,
+      records: [],
     });
   }
 });
@@ -514,7 +370,7 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
 app.post('/api/test-google-integration', async (req, res) => {
   try {
     const { webhookUrl } = req.body;
-    const targetUrl = webhookUrl?.trim() || currentConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
+    const targetUrl = webhookUrl?.trim() || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
     if (!targetUrl) {
       return res.status(400).json({
@@ -575,7 +431,7 @@ app.post('/api/test-google-integration', async (req, res) => {
 app.post('/api/upload-drive-proxy', async (req, res) => {
   try {
     const { webhookUrl, payload } = req.body;
-    const targetUrl = webhookUrl?.trim() || currentConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
+    const targetUrl = webhookUrl?.trim() || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
     if (!targetUrl) {
       return res.status(400).json({
