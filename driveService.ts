@@ -170,12 +170,13 @@ export async function fetchRecordsFromSheet(webhookUrl?: string): Promise<FetchS
     });
 
     const data = await res.json();
-    if (res.ok && data && data.records && Array.isArray(data.records)) {
+    const fetchedRecords = data.records || data.registros || data.data;
+    if (res.ok && data && Array.isArray(fetchedRecords)) {
       return {
         sucesso: true,
-        mensagem: data.mensagem || `Sincronizado com o Google Sheets (${data.records.length} registros).`,
-        records: data.records,
-        total: data.records.length,
+        mensagem: data.mensagem || `Sincronizado com o Google Sheets (${fetchedRecords.length} registros).`,
+        records: fetchedRecords,
+        total: fetchedRecords.length,
       };
     }
   } catch (err: any) {
@@ -187,12 +188,13 @@ export async function fetchRecordsFromSheet(webhookUrl?: string): Promise<FetchS
     const res = await fetch('/api/records');
     if (res.ok) {
       const data = await res.json();
-      if (data && data.records && Array.isArray(data.records)) {
+      const records = data.records || data.registros || data.data;
+      if (data && Array.isArray(records)) {
         return {
           sucesso: true,
-          mensagem: `Sincronizado com o servidor central (${data.records.length} registros).`,
-          records: data.records,
-          total: data.records.length,
+          mensagem: `Sincronizado com o servidor central (${records.length} registros).`,
+          records: records,
+          total: records.length,
         };
       }
     }
@@ -200,22 +202,24 @@ export async function fetchRecordsFromSheet(webhookUrl?: string): Promise<FetchS
     console.warn('GET /api/records failed:', err);
   }
 
-  // 3. Fallback direct browser GET if webhookUrl is provided
+  // 3. Fallback direct browser POST (com action: 'get_sheet_data') if webhookUrl is provided
   if (webhookUrl && webhookUrl.trim()) {
     try {
       const directRes = await fetch(webhookUrl.trim(), {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'get_sheet_data' }),
       });
 
       if (directRes.ok) {
         const json = await directRes.json();
-        if (json && json.records && Array.isArray(json.records)) {
+        const records = json.data || json.registros || json.records || [];
+        if (Array.isArray(records)) {
           return {
             sucesso: true,
             mensagem: 'Dados carregados da planilha com sucesso!',
-            records: json.records,
-            total: json.records.length,
+            records: records,
+            total: records.length,
           };
         }
       }
@@ -245,7 +249,7 @@ export async function clearServerRecords(): Promise<void> {
 
 /**
  * Main Full-Stack Pipeline:
- * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini 3.7) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ MULTI-PC REPLICATION
+ * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ MULTI-PC REPLICATION
  */
 export async function processReceiptPipeline(
   base64DataUrl: string,
