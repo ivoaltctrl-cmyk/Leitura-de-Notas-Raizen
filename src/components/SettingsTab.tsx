@@ -17,10 +17,6 @@ import {
   AlertTriangle,
   Users,
   Globe,
-  Share2,
-  Link2,
-  Send,
-  ExternalLink,
 } from 'lucide-react';
 import { GasConfig, AbastecimentoRecord } from '../types';
 import { testGoogleIntegration, fetchRecordsFromSheet } from '../utils/driveService';
@@ -55,7 +51,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [testResult, setTestResult] = useState<{ sucesso: boolean; mensagem: string } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
-  const [copiedShareLink, setCopiedShareLink] = useState(false);
 
   // Sheet test state
   const [isTestingSheetRead, setIsTestingSheetRead] = useState(false);
@@ -173,29 +168,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       setTimeout(() => setCopiedCode(false), 2500);
     } catch (err) {
       console.error('Falha ao copiar código:', err);
-    }
-  };
-
-  const getOperatorShareLink = () => {
-    if (!webhookUrl.trim()) return '';
-    try {
-      const origin = window.location.origin;
-      const pathname = window.location.pathname;
-      return `${origin}${pathname}?w=${encodeURIComponent(webhookUrl.trim())}`;
-    } catch {
-      return '';
-    }
-  };
-
-  const handleCopyShareLink = async () => {
-    const link = getOperatorShareLink();
-    if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopiedShareLink(true);
-      setTimeout(() => setCopiedShareLink(false), 3000);
-    } catch (err) {
-      console.error('Falha ao copiar link de compartilhamento:', err);
     }
   };
 
@@ -337,64 +309,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <h3 className="text-sm font-bold text-white">Sincronização Multi-Computadores Ativa</h3>
         </div>
         <p className="text-xs text-neutral-300 leading-relaxed">
-          Para que todos os outros operadores acessem o mesmo Google Drive e a planilha em tempo real sem precisar digitar senhas ou URLs, envie o <strong>Link Direto Pré-Configurado</strong> abaixo:
+          Ao salvar a URL do Webhook do Google Apps Script abaixo, a configuração é armazenada no <strong>Servidor Central</strong>. Qualquer operador que abrir o aplicativo em qualquer computador, tablet ou celular terá acesso automático ao mesmo Google Drive e verá a mesma planilha atualizada em tempo real.
         </p>
       </div>
-
-      {/* Direct Operator Link Generator Card */}
-      {webhookUrl && (
-        <div className="bg-emerald-50/90 border border-emerald-300 rounded-2xl p-5 shadow-xs space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">
-                <Share2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-emerald-950 flex items-center gap-1.5">
-                  <span>Link de Acesso Automático para Operadores</span>
-                  <span className="text-[10px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full font-bold">
-                    Recomendado
-                  </span>
-                </h3>
-                <p className="text-xs text-emerald-800">
-                  Qualquer computador ou celular que abrir este link ficará <strong>100% conectado na hora</strong>, sem pedir senha.
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleCopyShareLink}
-              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
-            >
-              {copiedShareLink ? <Check className="w-4 h-4 text-emerald-200" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedShareLink ? 'Link Copiado!' : 'Copiar Link dos Operadores'}</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 bg-white/90 border border-emerald-200 rounded-xl p-2.5">
-            <Link2 className="w-4 h-4 text-emerald-700 shrink-0" />
-            <input
-              type="text"
-              readOnly
-              value={getOperatorShareLink()}
-              className="flex-1 text-xs font-mono text-emerald-950 bg-transparent outline-hidden select-all"
-              onClick={(e) => (e.target as HTMLInputElement).select()}
-            />
-            <button
-              type="button"
-              onClick={handleCopyShareLink}
-              className="text-xs font-bold text-emerald-800 hover:text-emerald-950 underline cursor-pointer shrink-0"
-            >
-              Copiar
-            </button>
-          </div>
-
-          <p className="text-[11px] text-emerald-800 leading-normal">
-            💡 <strong>Como usar:</strong> Copie este link e envie no <em>WhatsApp, Teams ou E-mail</em> da equipe. Ao clicarem nele no navegador de seus computadores ou celulares, o Webhook é configurado automaticamente na memória do navegador deles.
-          </p>
-        </div>
-      )}
 
       {/* Password Change Form Modal/Box */}
       {showPasswordChange && (

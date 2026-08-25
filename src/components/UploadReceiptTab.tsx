@@ -11,9 +11,6 @@ import {
   ArrowUpRight,
   Trash2,
   Check,
-  Link2,
-  Lock,
-  ExternalLink,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
 import { compressImage, uploadImageToGoogleDrive } from '../utils/driveService';
@@ -24,8 +21,6 @@ interface UploadReceiptTabProps {
   onAddRecord: (record: AbastecimentoRecord) => void;
   onSwitchToSpreadsheet: () => void;
   recentRecords?: AbastecimentoRecord[];
-  onOpenSettings?: () => void;
-  onSaveGasConfig?: (config: GasConfig) => void;
 }
 
 export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
@@ -33,8 +28,6 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
   onAddRecord,
   onSwitchToSpreadsheet,
   recentRecords = [],
-  onOpenSettings,
-  onSaveGasConfig,
 }) => {
   const [selectedImage, setSelectedImage] = useState<{
     base64: string;
@@ -49,28 +42,8 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
   const [lastSavedRecord, setLastSavedRecord] = useState<AbastecimentoRecord | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLargeCameraOpen, setIsLargeCameraOpen] = useState(false);
-  const [showQuickConnectInput, setShowQuickConnectInput] = useState(false);
-  const [quickUrlInput, setQuickUrlInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Handle Quick Webhook Connect
-  const handleQuickConnect = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickUrlInput.trim() || !quickUrlInput.trim().startsWith('http')) {
-      setErrorMsg('Por favor, insira uma URL válida do Google Apps Script (iniciando com https://).');
-      return;
-    }
-
-    if (onSaveGasConfig) {
-      onSaveGasConfig({
-        webhookUrl: quickUrlInput.trim(),
-        autoUploadToDrive: true,
-      });
-      setShowQuickConnectInput(false);
-      setErrorMsg(null);
-    }
-  };
 
   // Handle file select from gallery or computer
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -240,81 +213,6 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
         </div>
       )}
 
-      {/* Unconfigured Webhook Warning & Quick Connect Banner */}
-      {!gasConfig.webhookUrl && (
-        <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 rounded-2xl p-5 shadow-xs space-y-3 animate-fadeIn">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
-                <AlertCircle className="w-6 h-6" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="text-sm font-bold text-amber-950">
-                  Google Apps Script / Webhook não conectado neste dispositivo
-                </h4>
-                <p className="text-xs text-amber-900 leading-relaxed">
-                  Para que as fotos tiradas neste computador ou celular sejam gravadas na pasta do Google Drive e na planilha <code>Dados_Raizen</code>, conecte o Webhook abaixo ou peça o <strong>Link Direto</strong> ao Administrador.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {!showQuickConnectInput ? (
-            <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowQuickConnectInput(true)}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-              >
-                <Link2 className="w-4 h-4" />
-                <span>Colar URL do Webhook Aqui</span>
-              </button>
-
-              {onOpenSettings && (
-                <button
-                  type="button"
-                  onClick={onOpenSettings}
-                  className="px-4 py-2 bg-white hover:bg-amber-100/60 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Painel de Administração</span>
-                </button>
-              )}
-            </div>
-          ) : (
-            <form onSubmit={handleQuickConnect} className="pt-2 border-t border-amber-200/80 space-y-2">
-              <label className="text-xs font-bold text-amber-950 block">
-                Cole a URL do Google Apps Script (terminada em /exec):
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="url"
-                  value={quickUrlInput}
-                  onChange={(e) => setQuickUrlInput(e.target.value)}
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  autoFocus
-                  required
-                  className="flex-1 px-3.5 py-2 text-xs font-mono rounded-xl border border-amber-400 bg-white text-neutral-900 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shrink-0 shadow-xs"
-                >
-                  Conectar Dispositivo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowQuickConnectInput(false)}
-                  className="px-3 py-2 bg-neutral-200 hover:bg-neutral-300 text-neutral-800 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
-
       {/* Error Notification */}
       {errorMsg && (
         <div className="bg-red-50 border border-red-300 text-red-900 rounded-2xl p-4 flex items-start space-x-3 text-xs shadow-xs animate-fadeIn">
@@ -343,18 +241,9 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
               Captura e Envio de Nota
             </span>
           </div>
-          <div className="flex items-center space-x-2 text-[11px] font-semibold">
-            {gasConfig.webhookUrl ? (
-              <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Google Drive Conectado</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Drive não configurado</span>
-              </span>
-            )}
+          <div className="flex items-center space-x-1.5 text-[11px] font-semibold text-neutral-500">
+            <HardDrive className="w-3.5 h-3.5 text-neutral-600" />
+            <span>Google Drive</span>
           </div>
         </div>
 
