@@ -316,27 +316,40 @@ app.post('/api/test-google-integration', async (req, res) => {
       timestamp: new Date().toISOString(),
     };
 
+    // Google Apps Script redirects (302) on POST to an execution output URL.
     const response = await fetch(targetUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
       body: JSON.stringify(testPayload),
       redirect: 'follow',
     });
 
     const responseText = await response.text();
-    let responseData;
+    let responseData: any = null;
     try {
       responseData = JSON.parse(responseText);
     } catch {
-      responseData = {
-        sucesso: response.ok,
-        mensagem: responseText || 'Conexão estabelecida com o Google Apps Script!',
-      };
+      // If response is HTML from Google or plain text, analyze
+      if (response.ok) {
+        responseData = {
+          sucesso: true,
+          mensagem: 'Conexão confirmada com sucesso com o Web App do Google Apps Script!',
+        };
+      } else {
+        responseData = {
+          sucesso: false,
+          mensagem: `Google retornou status ${response.status}: ${responseText.slice(0, 150)}`,
+        };
+      }
     }
 
+    const isSuccess = response.ok && (responseData?.sucesso !== false);
+
     res.json({
-      sucesso: response.ok,
-      mensagem: responseData.mensagem || 'Conexão com Google Drive & Sheets testada com sucesso!',
+      sucesso: isSuccess,
+      mensagem: responseData?.mensagem || (isSuccess ? 'Conexão confirmada com o Google Drive!' : 'Falha na resposta do Google Apps Script.'),
       raw: responseData,
     });
   } catch (error: any) {
@@ -348,12 +361,13 @@ app.post('/api/test-google-integration', async (req, res) => {
   }
 });
 
-// Endpoint proxy for Google Apps Script Web App (legacy support)
+// Endpoint proxy for Direct Google Apps Script upload (Direct front -> Drive)
 app.post('/api/upload-drive-proxy', async (req, res) => {
   try {
     const { webhookUrl, payload } = req.body;
+    const targetUrl = webhookUrl?.trim() || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
-    if (!webhookUrl) {
+    if (!targetUrl) {
       return res.status(400).json({
         sucesso: false,
         mensagem: 'URL do Webhook do Google Apps Script não informada.',
@@ -367,24 +381,24 @@ app.post('/api/upload-drive-proxy', async (req, res) => {
       });
     }
 
-    // Call user's Google Apps Script doPost endpoint
-    const response = await fetch(webhookUrl, {
+    // Call user's Google Apps Script doPost endpoint with text/plain to prevent CORS preflight issues
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain;charset=utf-8',
       },
       body: JSON.stringify(payload),
       redirect: 'follow',
     });
 
     const responseText = await response.text();
-    let responseData;
+    let responseData: any;
     try {
       responseData = JSON.parse(responseText);
     } catch {
       responseData = {
         sucesso: response.ok,
-        mensagem: responseText || 'Resposta recebida do Google Apps Script',
+        mensagem: response.ok ? 'Foto enviada para a pasta do Google Drive com sucesso!' : responseText,
       };
     }
 

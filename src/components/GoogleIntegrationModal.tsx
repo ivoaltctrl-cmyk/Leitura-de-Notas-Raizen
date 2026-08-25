@@ -238,13 +238,12 @@ export const GoogleIntegrationModal: React.FC<GoogleIntegrationModalProps> = ({
               <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 space-y-2.5">
                 <div className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>O que acontece a cada comprovante enviado:</span>
+                  <span>Fluxo Direto e Simples:</span>
                 </div>
                 <ul className="text-xs text-neutral-600 space-y-1.5 pl-5 list-disc">
-                  <li><strong>Foto salva no Google Drive:</strong> Cria o arquivo JPG dentro da pasta <code>Comprovantes_Raizen</code>.</li>
-                  <li><strong>Extração pelo Back:</strong> IA Gemini 3.7 lê os 11 campos da nota (inclusive <em>Término do Abastecimento</em>).</li>
-                  <li><strong>Gravação no Google Sheets:</strong> Adiciona a nova linha nas colunas de <strong>A a K</strong> na aba <code>Dados_Raizen</code>.</li>
-                  <li><strong>Espelho no Front:</strong> A linha aparece instantaneamente na guia de planilha da ferramenta.</li>
+                  <li><strong>Foto salva no Google Drive:</strong> Cria o arquivo JPG diretamente dentro da pasta do Google Drive configurada no script.</li>
+                  <li><strong>Sem intermediários:</strong> O front-end captura a foto e faz o upload direto via Webhook.</li>
+                  <li><strong>Leitura & Planilha:</strong> Sua IA / backend lê a pasta do Drive e efetua os lançamentos na planilha.</li>
                 </ul>
               </div>
             </div>

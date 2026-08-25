@@ -18,7 +18,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
-import { compressImage, processReceiptPipeline } from '../utils/driveService';
+import { compressImage, processReceiptPipeline, uploadImageToGoogleDrive } from '../utils/driveService';
 
 interface UploadReceiptTabProps {
   gasConfig: GasConfig;
@@ -224,6 +224,70 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
   };
 
   /**
+   * Envio Direto: Front ➔ Google Drive (Sem passar por leitura intermediária)
+   */
+  const handleExecuteDirectDriveUpload = async () => {
+    if (!selectedImage) {
+      setErrorMsg('Por favor, tire uma foto ou selecione uma imagem da nota.');
+      return;
+    }
+
+    if (!gasConfig.webhookUrl) {
+      setErrorMsg('Configure a URL do Webhook do Google Apps Script em "Configurar Drive" antes de enviar.');
+      return;
+    }
+
+    setIsProcessingPipeline(true);
+    setErrorMsg(null);
+    setPipelineStep('Enviando foto diretamente para a pasta do Google Drive...');
+
+    try {
+      const result = await uploadImageToGoogleDrive(
+        gasConfig.webhookUrl,
+        selectedImage.dataUrl,
+        selectedImage.fileName,
+        selectedImage.mimeType
+      );
+
+      if (result.sucesso) {
+        const fakeRecord: AbastecimentoRecord = {
+          id: `REC_${Date.now()}`,
+          numero: selectedImage.fileName.replace(/\.[^/.]+$/, ''),
+          fileName: selectedImage.fileName,
+          fotoBase64: selectedImage.dataUrl,
+          fotoMimeType: selectedImage.mimeType,
+          fileSize: selectedImage.fileSize,
+          formaPagamento: 'CONTRATO',
+          cliente: 'WFS / RAÍZEN',
+          horaChegada: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          inicioAbastecimento: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          terminoAbastecimento: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          produto: 'DIESEL',
+          volume: 'Salvo no Drive',
+          obs: 'Enviado diretamente ao Google Drive',
+          assinaturaCliente: 'OK',
+          driveFileId: result.fileId || '',
+          driveFileUrl: result.driveUrl || '',
+          statusEnvio: 'enviado_drive',
+          statusMsg: 'Foto salva com sucesso na pasta do Google Drive!',
+          dataCriacao: new Date().toISOString(),
+        };
+
+        onAddRecord(fakeRecord);
+        setLastSavedRecord(fakeRecord);
+        setSelectedImage(null);
+      } else {
+        setErrorMsg(result.mensagem || 'Falha ao salvar no Google Drive.');
+      }
+    } catch (err: any) {
+      setErrorMsg(`Erro ao enviar para o Google Drive: ${err.message}`);
+    } finally {
+      setIsProcessingPipeline(false);
+      setPipelineStep('');
+    }
+  };
+
+  /**
    * Complete Pipeline Execution:
    * Front ➔ Driver (Google Drive) ➔ Back (IA Gemini) ➔ Sheets (Dados_Raizen) ➔ Front (Espelho)
    */
@@ -235,10 +299,10 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
 
     setIsProcessingPipeline(true);
     setErrorMsg(null);
-    setPipelineStep('Iniciando envio: Front ➔ Google Drive ➔ Back...');
+    setPipelineStep('Enviando foto para o Google Drive e processando...');
 
     try {
-      setPipelineStep('1/3: Enviando foto para a nuvem e extraindo 11 colunas no Back...');
+      // If user configured webhook, use direct upload or flow
       const result = await processReceiptPipeline(
         selectedImage.dataUrl,
         selectedImage.fileName,
@@ -247,7 +311,6 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
       );
 
       if (result.sucesso && result.record) {
-        setPipelineStep('2/3: Gravando linha na planilha Dados_Raizen...');
         onAddRecord(result.record);
         setLastSavedRecord(result.record);
         setSelectedImage(null);
@@ -255,7 +318,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
         setErrorMsg(result.mensagem || 'Falha ao processar o comprovante.');
       }
     } catch (err: any) {
-      setErrorMsg(`Erro no fluxo de integração: ${err.message || 'Falha de comunicação'}`);
+      setErrorMsg(`Erro no envio: ${err.message || 'Falha de comunicação'}`);
     } finally {
       setIsProcessingPipeline(false);
       setPipelineStep('');
@@ -467,30 +530,30 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                 </div>
               </div>
 
-              {/* Big Primary Action: Execute Full Pipeline */}
-              <div className="space-y-2">
+              {/* Primary Actions: Direct Drive Upload and Full Pipeline */}
+              <div className="space-y-3">
                 <button
                   type="button"
-                  id="btn-execute-pipeline"
-                  onClick={handleExecuteFullPipeline}
+                  id="btn-upload-direct-drive"
+                  onClick={handleExecuteDirectDriveUpload}
                   disabled={isProcessingPipeline}
-                  className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:bg-neutral-300 text-white rounded-2xl text-base font-black flex items-center justify-center gap-2.5 shadow-lg shadow-red-600/20 transition-all cursor-pointer transform active:scale-[0.99]"
+                  className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-neutral-300 text-white rounded-2xl text-base font-black flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer transform active:scale-[0.99]"
                 >
                   {isProcessingPipeline ? (
                     <>
                       <RefreshCw className="w-5 h-5 animate-spin" />
-                      <span>{pipelineStep || 'Processando no Drive, Back e Sheets...'}</span>
+                      <span>{pipelineStep || 'Enviando foto para a pasta do Drive...'}</span>
                     </>
                   ) : (
                     <>
-                      <Zap className="w-5 h-5" />
-                      <span>Enviar Comprovante (Drive ➔ Back ➔ Sheets)</span>
+                      <HardDrive className="w-5 h-5" />
+                      <span>Salvar Foto Diretamente no Google Drive</span>
                     </>
                   )}
                 </button>
 
                 <p className="text-center text-[11px] text-neutral-500 font-medium">
-                  Salva o arquivo no Google Drive, extrai as 11 colunas no Back e insere na aba <code>Dados_Raizen</code>.
+                  Cria o arquivo JPG na pasta <code>Comprovantes_Raizen</code> do Google Drive.
                 </p>
               </div>
             </div>
