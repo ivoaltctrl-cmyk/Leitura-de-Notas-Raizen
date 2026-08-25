@@ -190,16 +190,16 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
               </div>
               <div className="space-y-0.5">
                 <h3 className="font-bold text-sm sm:text-base text-emerald-900 flex items-center gap-1.5">
-                  <span>Nota Extraída com IA e Gravada na Planilha!</span>
+                  <span>Foto Enviada com Sucesso para o Google Drive!</span>
                   <span className="text-[11px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full font-bold">
-                    10 Colunas OK
+                    Confirmado
                   </span>
                 </h3>
                 <p className="text-xs text-emerald-800 font-medium">
-                  OS Nº <strong>{lastSavedRecord.numero}</strong> • {lastSavedRecord.cliente} • {lastSavedRecord.volume} L
+                  Arquivo: <strong>{lastSavedRecord.fileName || lastSavedRecord.numero}</strong>
                 </p>
                 <p className="text-[11px] text-emerald-700">
-                  {lastSavedRecord.statusMsg || 'Linha gravada na aba Dados_Raizen e foto na pasta do Google Drive.'}
+                  {lastSavedRecord.statusMsg || 'Foto salva na pasta Comprovantes_Raizen e linha gravada na planilha Dados_Raizen!'}
                 </p>
               </div>
             </div>

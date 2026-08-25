@@ -1,7 +1,6 @@
 /**
  * Google Apps Script Template Code
  * - Salva as fotos capturadas na pasta do Google Drive (Comprovantes_Raizen)
- * - Extrai com IA / OCR as 10 colunas da nota fiscal/canhoto de abastecimento diretamente no Drive/GAS
  * - Grava as linhas na aba "Dados_Raizen" (Colunas A até K)
  * - Lê e retorna os dados reais da planilha para sincronização instantânea em múltiplos PCs (doGet / doPost)
  */
@@ -9,7 +8,7 @@
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * WFS / RAÍZEN - SISTEMA DE CONTROLE DE ABASTECIMENTO
  * Integração Google Drive + Google Sheets (Aba: Dados_Raizen)
- * Extração de Dados e OCR Direto no Google Drive & Apps Script
+ * Multi-Usuário / Multi-Dispositivos (Execução Rápida e Direta)
  */
 
 // Nome exato da aba na planilha e pasta no Drive
@@ -40,7 +39,7 @@ function doGet(e) {
 }
 
 /**
- * Endpoint POST: Salva foto no Drive, executa OCR/IA e grava linha na planilha
+ * Endpoint POST: Salva foto no Drive e grava linha na planilha instantaneamente
  */
 function doPost(e) {
   var output;
@@ -71,7 +70,7 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 3. Gravação: Salvar Foto no Drive + Extrair Dados + Gravar Linha
+    // 3. Gravação: Salvar Foto no Drive + Linha no Sheets
     if (!data.base64 && !data.dados) {
       throw new Error("Dados da nota ou imagem ausentes.");
     }
@@ -79,7 +78,6 @@ function doPost(e) {
     var fileId = "";
     var fileUrl = "";
     var fileName = data.fileName || ("OS_" + Utilities.formatDate(new Date(), "GMT-3", "yyyyMMdd_HHmmss") + ".jpg");
-    var blob = null;
 
     // Salvar arquivo no Google Drive se houver imagem base64
     if (data.base64) {
@@ -87,7 +85,7 @@ function doPost(e) {
       var base64Data = data.base64.replace(/^data:image\\/\\w+;base64,/, "");
       var decodedBytes = Utilities.base64Decode(base64Data);
       var mimeType = data.mimeType || "image/jpeg";
-      blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
+      var blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
       var file = folder.createFile(blob);
       
       // Permitir visualização do link por qualquer um com o link
@@ -99,26 +97,9 @@ function doPost(e) {
       fileUrl = file.getUrl();
     }
 
-    // Dados da nota: Se não foram enviados explicitamente, extrair diretamente via OCR/IA no Google Apps Script
-    var d = data.dados || {};
-    var hasCompleteData = d.numero && d.cliente && d.volume && d.volume !== "0,00" && d.volume !== "0";
-
-    if (!hasCompleteData && blob) {
-      var extracted = extractCanhotoFromImage(blob, fileName);
-      d.numero = d.numero || extracted.numero;
-      d.formaPagamento = d.formaPagamento || extracted.formaPagamento;
-      d.cliente = d.cliente || extracted.cliente;
-      d.horaChegada = d.horaChegada || extracted.horaChegada;
-      d.inicioAbastecimento = d.inicioAbastecimento || extracted.inicioAbastecimento;
-      d.terminoAbastecimento = d.terminoAbastecimento || extracted.terminoAbastecimento;
-      d.produto = d.produto || extracted.produto;
-      d.volume = (d.volume && d.volume !== "0" && d.volume !== "0,00") ? d.volume : extracted.volume;
-      d.obs = d.obs || extracted.obs;
-      d.assinaturaCliente = d.assinaturaCliente || extracted.assinaturaCliente;
-    }
-
     // Gravar linha na Planilha Dados_Raizen
     var rowIndex = 0;
+    var d = data.dados || {};
     var ss = getSpreadsheet();
     if (ss) {
       var sheet = getOrCreateSheet(ss);
@@ -128,7 +109,7 @@ function doPost(e) {
       var newRow = [
         d.numero || fileName.replace(/\\.[^/.]+$/, ""), // A: Número
         d.formaPagamento || "CONTRATO",                 // B: Forma de Pagamento
-        d.cliente || "WFS / RAÍZEN",                    // C: Cliente
+        d.cliente || "ORBITAL SERV AUX TRANSP AEREO",   // C: Cliente
         d.horaChegada || "",                            // D: Hora da Chegada
         d.inicioAbastecimento || "",                    // E: Início do Abastecimento
         d.terminoAbastecimento || "",                   // F: Término do Abastecimento
@@ -153,7 +134,7 @@ function doPost(e) {
         id: "sheet-row-" + rowIndex,
         numero: d.numero || fileName.replace(/\\.[^/.]+$/, ""),
         formaPagamento: d.formaPagamento || "CONTRATO",
-        cliente: d.cliente || "WFS / RAÍZEN",
+        cliente: d.cliente || "ORBITAL SERV AUX TRANSP AEREO",
         horaChegada: d.horaChegada || "",
         inicioAbastecimento: d.inicioAbastecimento || "",
         terminoAbastecimento: d.terminoAbastecimento || "",
@@ -176,207 +157,6 @@ function doPost(e) {
 
   return ContentService.createTextOutput(JSON.stringify(output))
     .setMimeType(ContentService.MimeType.JSON);
-}
-
-/**
- * Motor de IA / OCR do Google Apps Script
- * Extrai os 10 campos da foto do canhoto diretamente dentro do Google Drive / Apps Script
- */
-function extractCanhotoFromImage(blob, fileName) {
-  var extracted = {
-    numero: "",
-    formaPagamento: "CONTRATO",
-    cliente: "ORBITAL SERV AUX TRANSP AEREO",
-    horaChegada: "",
-    inicioAbastecimento: "",
-    terminoAbastecimento: "",
-    produto: "DIESEL",
-    volume: "0,00",
-    obs: "",
-    assinaturaCliente: ""
-  };
-
-  // 1. Tentar OCR com Drive API
-  try {
-    var tempDoc = Drive.Files.insert(
-      {
-        title: "OCR_TEMP_" + (fileName || "nota"),
-        mimeType: "application/vnd.google-apps.document"
-      },
-      blob,
-      {
-        ocr: true,
-        ocrLanguage: "pt"
-      }
-    );
-
-    if (tempDoc && tempDoc.id) {
-      var doc = DocumentApp.openById(tempDoc.id);
-      var text = doc.getBody().getText();
-
-      // Deleta o documento temporário do OCR
-      try {
-        DriveApp.getFileById(tempDoc.id).setTrashed(true);
-      } catch (e) {}
-
-      if (text && text.trim().length > 0) {
-        return parseCanhotoText(text, fileName);
-      }
-    }
-  } catch (driveOcrErr) {
-    Logger.log("Aviso: Drive OCR: " + driveOcrErr.message);
-  }
-
-  // 2. Se houver chave Gemini nos Script Properties
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var geminiKey = props.getProperty('GEMINI_API_KEY');
-    if (geminiKey) {
-      var geminiResult = callGeminiVisionGAS(blob, geminiKey);
-      if (geminiResult) return geminiResult;
-    }
-  } catch (geminiErr) {
-    Logger.log("Aviso Gemini GAS: " + geminiErr.message);
-  }
-
-  // Fallback seguro
-  extracted.numero = (fileName || "").replace(/\\.[^/.]+$/, "").replace(/[^0-9]/g, "") || "OS-" + Utilities.formatDate(new Date(), "GMT-3", "ddMMHHmm");
-  return extracted;
-}
-
-/**
- * Analisador de Texto OCR para Canhotos WFS / Raízen
- */
-function parseCanhotoText(text, fileName) {
-  var d = {
-    numero: "",
-    formaPagamento: "CONTRATO",
-    cliente: "ORBITAL SERV AUX TRANSP AEREO",
-    horaChegada: "",
-    inicioAbastecimento: "",
-    terminoAbastecimento: "",
-    produto: "DIESEL",
-    volume: "0,00",
-    obs: "",
-    assinaturaCliente: ""
-  };
-
-  // 1. Número da Nota / OS (Ex: 2293305)
-  var matchNum = text.match(/N[uú]mero\\s*[:.]?\\s*(\\d{5,9})/i) || text.match(/\\b(22\\d{5})\\b/) || text.match(/\\b(\\d{6,8})\\b/);
-  if (matchNum) {
-    d.numero = matchNum[1];
-  } else {
-    d.numero = (fileName || "").replace(/\\.[^/.]+$/, "").replace(/[^0-9]/g, "") || "2293305";
-  }
-
-  // 2. Forma de Pagamento (Ex: CONTRATO)
-  var matchPag = text.match(/Forma\\s+de\\s+Pagamento\\s*[:.]?\\s*([A-ZÀ-Úa-z]+)/i);
-  if (matchPag) {
-    d.formaPagamento = matchPag[1].toUpperCase().trim();
-  } else if (/CONTRATO/i.test(text)) {
-    d.formaPagamento = "CONTRATO";
-  } else if (/A\\s+VISTA/i.test(text)) {
-    d.formaPagamento = "A VISTA";
-  }
-
-  // 3. Cliente (Ex: ORBITAL SERV AUX TRANSP AEREO, SWISSPORT, DNATA, LATAM, GOL, AZUL)
-  var matchCli = text.match(/Cliente\\s*[:.]?\\s*([^\\n\\r]+)/i);
-  if (matchCli) {
-    var rawCli = matchCli[1].replace(/IBM[:\\s0-9]+/i, "").trim();
-    if (rawCli.length > 2) d.cliente = rawCli;
-  }
-  if (/ORBITAL/i.test(text)) {
-    d.cliente = "ORBITAL SERV AUX TRANSP AEREO";
-  } else if (/SWISSPORT/i.test(text)) {
-    d.cliente = "SWISSPORT BRASIL";
-  } else if (/DNATA/i.test(text)) {
-    d.cliente = "DNATA";
-  } else if (/LATAM/i.test(text)) {
-    d.cliente = "LATAM AIRLINES";
-  } else if (/GOL/i.test(text)) {
-    d.cliente = "GOL LINHAS AEREAS";
-  } else if (/AZUL/i.test(text)) {
-    d.cliente = "AZUL LINHAS AEREAS";
-  }
-
-  // 4. Horários (Chegada, Início, Término)
-  var matchCheg = text.match(/Chegada\\s*[:.]?\\s*(\\d{1,2}:\\d{2})/i) || text.match(/Hora\\s+da\\s+Chegada\\s*[:.]?\\s*(\\d{1,2}:\\d{2})/i);
-  if (matchCheg) d.horaChegada = matchCheg[1];
-
-  var matchIni = text.match(/In[ií]cio\\s*(?:Abastecimento)?\\s*[:.]?\\s*(\\d{1,2}:\\d{2})/i);
-  if (matchIni) d.inicioAbastecimento = matchIni[1];
-
-  var matchTerm = text.match(/T[eé]rmino\\s*(?:Abastecimento)?\\s*[:.]?\\s*(\\d{1,2}:\\d{2})/i) || text.match(/Hora\\s+sa[ií]da\\s*[:.]?\\s*(\\d{1,2}:\\d{2})/i);
-  if (matchTerm) d.terminoAbastecimento = matchTerm[1];
-
-  // 5. Produto (Ex: DIESEL, DIESEL S10, JET A-1, GASOLINA)
-  var matchProd = text.match(/Produto\\s*[:.]?\\s*([^\\n\\r]+)/i);
-  if (matchProd && matchProd[1].trim().length > 1) {
-    d.produto = matchProd[1].trim().toUpperCase();
-  } else if (/JET\\s*A-?1/i.test(text)) {
-    d.produto = "JET A-1";
-  } else if (/DIESEL/i.test(text)) {
-    d.produto = "DIESEL";
-  }
-
-  // 6. Volume (Ex: 224 LT -> 224,00)
-  var matchVol = text.match(/Volume\\s*[:.]?\\s*(\\d+[\\d.,]*)/i) || text.match(/(\\d+[\\d.,]*)\\s*(?:LT|LITROS|L)\\b/i);
-  if (matchVol) {
-    var rawVol = matchVol[1].replace(".", ",");
-    if (!rawVol.includes(",")) rawVol = rawVol + ",00";
-    d.volume = rawVol;
-  }
-
-  // 7. Obs / Equipamento (Ex: GE135)
-  var matchObs = text.match(/Obs\\.?[\\s:]*([^\\n\\r]+)/i) || text.match(/\\b(GE\\d{2,4})\\b/i) || text.match(/\\b([A-Z]{2,3}-\\d{2,4})\\b/);
-  if (matchObs) {
-    d.obs = matchObs[1].trim();
-  }
-
-  // 8. Assinatura do Cliente (Ex: joanilson 304371)
-  var matchAssin = text.match(/Assinatura\\s+do\\s+Cliente\\s*[:.]?\\s*([^\\n\\r]+)/i) || text.match(/Assinatura[^:\\n\\r]*[:.]?\\s*([^\\n\\r]+)/i);
-  if (matchAssin) {
-    d.assinaturaCliente = matchAssin[1].trim();
-  }
-
-  return d;
-}
-
-/**
- * Chamada Opcional à API Gemini diretamente no Google Apps Script
- */
-function callGeminiVisionGAS(blob, apiKey) {
-  try {
-    var base64Data = Utilities.base64Encode(blob.getBytes());
-    var mimeType = blob.getContentType() || "image/jpeg";
-
-    var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
-    var payload = {
-      contents: [{
-        parts: [
-          { text: "Extraia do canhoto de abastecimento em JSON puro: {numero, formaPagamento, cliente, horaChegada, inicioAbastecimento, terminoAbastecimento, produto, volume, obs, assinaturaCliente}" },
-          { inlineData: { mimeType: mimeType, data: base64Data } }
-        ]
-      }]
-    };
-
-    var res = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
-
-    if (res.getResponseCode() === 200) {
-      var json = JSON.parse(res.getContentText());
-      var text = json.candidates[0].content.parts[0].text;
-      var clean = text.replace(/\`\`\`json/g, "").replace(/\`\`\`/g, "").trim();
-      return JSON.parse(clean);
-    }
-  } catch (e) {
-    Logger.log("Erro Gemini Vision: " + e.toString());
-  }
-  return null;
 }
 
 /**
@@ -425,7 +205,7 @@ function getSheetRecords() {
       id: "sheet-row-" + (i + 2) + "-" + (colA || i),
       numero: colA || ("OS-" + (i + 1)),
       formaPagamento: String(row[1] || "CONTRATO").trim(),
-      cliente: colC || "WFS / RAÍZEN",
+      cliente: colC || "ORBITAL SERV AUX TRANSP AEREO",
       horaChegada: formatTimeValue(row[3]),
       inicioAbastecimento: formatTimeValue(row[4]),
       terminoAbastecimento: formatTimeValue(row[5]),
