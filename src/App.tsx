@@ -13,11 +13,17 @@ const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet' | 'settings'>('upload');
 
+  // Load records from localStorage, automatically purging any legacy mock demo records (e.g. rec-1, rec-2)
   const [records, setRecords] = useState<AbastecimentoRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed: AbastecimentoRecord[] = JSON.parse(saved);
+        // Retain only real user-created records, filter out mock records
+        const realRecords = parsed.filter(
+          (r) => r.id && !r.id.startsWith('rec-')
+        );
+        return realRecords;
       }
     } catch (e) {
       console.error('Erro ao ler registros do localStorage:', e);
@@ -74,6 +80,17 @@ export default function App() {
     setRecords((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const handleClearAllRecords = () => {
+    if (window.confirm('Tem certeza de que deseja limpar todos os registros salvos localmente?')) {
+      setRecords([]);
+      try {
+        localStorage.removeItem(STORAGE_KEY_RECORDS);
+      } catch (e) {
+        console.error('Erro ao limpar localStorage:', e);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col font-sans antialiased selection:bg-red-500 selection:text-white">
       {/* Top Navigation */}
@@ -83,8 +100,8 @@ export default function App() {
         recordCount={records.length}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Main Container - Full-width optimized to eliminate horizontal scrollbar on desktops */}
+      <main className="flex-1 w-full max-w-[1750px] mx-auto px-2.5 sm:px-4 lg:px-6 py-4">
         {activeTab === 'upload' && (
           <UploadReceiptTab
             gasConfig={gasConfig}
@@ -99,6 +116,7 @@ export default function App() {
             records={records}
             onUpdateRecord={handleUpdateRecord}
             onDeleteRecord={handleDeleteRecord}
+            onClearAllRecords={handleClearAllRecords}
             onOpenUploadTab={() => setActiveTab('upload')}
             onPreviewReceipt={(rec) => setPreviewRecord(rec)}
             gasConfig={gasConfig}
