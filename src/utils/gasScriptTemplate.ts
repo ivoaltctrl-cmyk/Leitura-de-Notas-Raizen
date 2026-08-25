@@ -8,7 +8,7 @@
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * WFS / RAÍZEN - SISTEMA DE CONTROLE DE ABASTECIMENTO
  * Integração Google Drive + Google Sheets (Aba: Dados_Raizen)
- * Multi-Usuário / Multi-Dispositivos (Execução Rápida e Direta)
+ * Multi-Usuário / Multi-Dispositivos
  */
 
 // Nome exato da aba na planilha e pasta no Drive
@@ -39,7 +39,7 @@ function doGet(e) {
 }
 
 /**
- * Endpoint POST: Salva foto no Drive e grava linha na planilha instantaneamente
+ * Endpoint POST: Salva foto no Drive, grava linha na planilha ou retorna dados
  */
 function doPost(e) {
   var output;
@@ -109,7 +109,7 @@ function doPost(e) {
       var newRow = [
         d.numero || fileName.replace(/\\.[^/.]+$/, ""), // A: Número
         d.formaPagamento || "CONTRATO",                 // B: Forma de Pagamento
-        d.cliente || "ORBITAL SERV AUX TRANSP AEREO",   // C: Cliente
+        d.cliente || "WFS / RAÍZEN",                    // C: Cliente
         d.horaChegada || "",                            // D: Hora da Chegada
         d.inicioAbastecimento || "",                    // E: Início do Abastecimento
         d.terminoAbastecimento || "",                   // F: Término do Abastecimento
@@ -129,23 +129,7 @@ function doPost(e) {
       fileId: fileId,
       driveUrl: fileUrl,
       fileName: fileName,
-      sheetRowIndex: rowIndex,
-      record: {
-        id: "sheet-row-" + rowIndex,
-        numero: d.numero || fileName.replace(/\\.[^/.]+$/, ""),
-        formaPagamento: d.formaPagamento || "CONTRATO",
-        cliente: d.cliente || "ORBITAL SERV AUX TRANSP AEREO",
-        horaChegada: d.horaChegada || "",
-        inicioAbastecimento: d.inicioAbastecimento || "",
-        terminoAbastecimento: d.terminoAbastecimento || "",
-        produto: d.produto || "DIESEL",
-        volume: d.volume || "0,00",
-        obs: d.obs || "",
-        assinaturaCliente: d.assinaturaCliente || "",
-        driveFileUrl: fileUrl,
-        dataCriacao: new Date().toISOString(),
-        statusEnvio: 'enviado_drive'
-      }
+      sheetRowIndex: rowIndex
     };
 
   } catch (err) {
@@ -205,7 +189,7 @@ function getSheetRecords() {
       id: "sheet-row-" + (i + 2) + "-" + (colA || i),
       numero: colA || ("OS-" + (i + 1)),
       formaPagamento: String(row[1] || "CONTRATO").trim(),
-      cliente: colC || "ORBITAL SERV AUX TRANSP AEREO",
+      cliente: colC || "WFS / RAÍZEN",
       horaChegada: formatTimeValue(row[3]),
       inicioAbastecimento: formatTimeValue(row[4]),
       terminoAbastecimento: formatTimeValue(row[5]),
