@@ -216,21 +216,22 @@ async function extractReceiptWithGemini(base64: string, mimeType: string) {
 
   const ai = getGeminiClient();
 
-  const prompt = `Você é um especialista de alta precisão em leitura e extração de ordens de serviço e comprovantes de abastecimento de combustível e aviação (WFS / Raízen).
-Analise a imagem da nota de abastecimento fornecida e extraia exatamente as 10 informações necessárias para as colunas da planilha oficial "Dados_Raizen":
+  const prompt = `Você é um especialista de altíssima precisão em leitura OCR e extração de dados de ordens de serviço e comprovantes de abastecimento de aviação e operações de solo (WFS Ground Support / Raízen S.A.).
 
-Campos obrigatórios:
-1. "numero": Número da nota / Ordem de Serviço / Nro OS (ex: "2293305" ou "123456")
-2. "formaPagamento": Forma de pagamento (ex: "CONTRATO", "A VISTA", "FATURADO", "BOLETO", "CARTAO", "CREDITO", "CONVENIO")
-3. "cliente": Razão social / Nome do cliente ou empresa atendida (ex: "ORBITAL SERV AUX TRANSP AEREO", "SWISSPORT", "DNATA", "GOL", "LATAM", "AZUL")
-4. "horaChegada": Horário de chegada no formato HH:MM (ex: "07:13" ou "10:15")
-5. "inicioAbastecimento": Horário de início do abastecimento no formato HH:MM (ex: "07:14" ou "10:20")
-6. "terminoAbastecimento": Horário de término / fim do abastecimento no formato HH:MM (ex: "07:22" ou "10:35"). Se não houver horário explícito de término, deduza com base no início + tempo estimado ou deixe vazio.
-7. "produto": Tipo de combustível / produto (ex: "DIESEL", "DIESEL S10", "JET A-1", "GASOLINA", "AVGAS")
-8. "volume": Quantidade / volume abastecido em Litros formatado com vírgula (ex: "224,00" ou "1.450,00" ou "50,00")
-9. "obs": Observações, prefixo de aeronave, placa, gerador ou equipamento (ex: "GE135", "TRATOR T-04 / PR-GUZ", "REBOCADOR RB-09")
-10. "assinaturaCliente": Nome legível e matrícula de quem assinou / conferiu (ex: "joanilson 304371" ou "marcos 441029")
-11. "confidenceNotes": Breve resumo da qualidade visual da leitura.`;
+Analise detalhadamente a foto do canhoto/nota de abastecimento e extraia com máxima exatidão os 10 campos para as colunas da planilha oficial "Dados_Raizen":
+
+REGRAS DE EXTRAÇÃO PARA CADA CAMPO:
+1. "numero": Localize a caixa superior "Número" (ao lado de Data e Veículo). Ex: "2293305". Extraia apenas os dígitos numéricos da OS. NUNCA use o nome do arquivo.
+2. "formaPagamento": Localize "Forma de Pagamento:". Extraia o valor (ex: "CONTRATO", "A VISTA", "FATURADO", "CARTAO").
+3. "cliente": Localize "Cliente:". Extraia a razão social da empresa atendida (ex: "ORBITAL SERV AUX TRANSP AEREO", "SWISSPORT", "DNATA", "GOL", "LATAM", "AZUL").
+4. "horaChegada": Localize "Hora da Chegada:". Formato HH:MM (ex: "07:13").
+5. "inicioAbastecimento": Localize "Inicio Abastecimento:". Formato HH:MM (ex: "07:14").
+6. "terminoAbastecimento": Localize "Termino Abastecimento:" ou "Hora saida:". Formato HH:MM (ex: "07:19").
+7. "produto": Localize a caixa "Produto". Extraia o combustível (ex: "DIESEL", "JET A-1", "GASOLINA").
+8. "volume": Localize a caixa "Volume". Extraia a quantidade de litros (ex: "224 LT" -> "224,00"). Use formato decimal com vírgula.
+9. "obs": Localize a linha "Obs.:" ou "Operacao:". Extraia a identificação do equipamento/prefixo/gerador (ex: "GE135").
+10. "assinaturaCliente": Localize a linha "Assinatura do Cliente". Extraia o nome e matrícula manuscritos ou carimbados (ex: "joanilson 304371").
+11. "confidenceNotes": Breve resumo dos campos lidos com sucesso.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3.7-flash',
