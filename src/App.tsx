@@ -6,6 +6,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { AbastecimentoRecord, GasConfig } from './types';
 import { INITIAL_RECORDS } from './data/sampleReceipts';
+import { fetchRecordsFromSheet } from './utils/driveService';
 
 const STORAGE_KEY_RECORDS = 'abastecimento_records_v1';
 const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
@@ -13,7 +14,9 @@ const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet' | 'settings'>('upload');
 
-  // Load records from localStorage
+  // O localStorage aqui funciona só como CACHE local, para exibir algo
+  // instantaneamente enquanto a sincronização com a planilha não termina.
+  // A fonte de verdade real é sempre a planilha Google Sheets (Dados_Raizen).
   const [records, setRecords] = useState<AbastecimentoRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
@@ -47,7 +50,35 @@ export default function App() {
 
   const [previewRecord, setPreviewRecord] = useState<AbastecimentoRecord | null>(null);
 
-  // Sync records to localStorage
+  // Sincroniza com a planilha (fonte única e compartilhada por todos os usuários)
+  // assim que o app abre, e depois a cada 30 segundos. Isso garante que todo
+  // mundo veja o mesmo controle online, e não apenas o que foi feito naquele aparelho.
+  useEffect(() => {
+    if (!gasConfig.webhookUrl) return;
+
+    let cancelled = false;
+
+    const syncFromServer = async () => {
+      try {
+        const result = await fetchRecordsFromSheet(gasConfig.webhookUrl);
+        if (!cancelled && result.sucesso && Array.isArray(result.records)) {
+          setRecords(result.records);
+        }
+      } catch (e) {
+        console.error('Erro ao sincronizar registros compartilhados:', e);
+      }
+    };
+
+    syncFromServer();
+    const intervalId = setInterval(syncFromServer, 30000); // a cada 30s
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [gasConfig.webhookUrl]);
+
+  // Sync records to localStorage (agora só como cache local, não como fonte)
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
