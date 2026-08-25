@@ -15,7 +15,6 @@ import {
   Layers,
   ExternalLink,
   Clock,
-  Settings,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
 import { exportToExcelXLSX, exportToCSV, copyTableAsTSV } from '../utils/exportUtils';
@@ -26,7 +25,6 @@ interface SpreadsheetTabProps {
   onDeleteRecord: (id: string) => void;
   onOpenUploadTab: () => void;
   onPreviewReceipt: (record: AbastecimentoRecord) => void;
-  onOpenSettingsModal: () => void;
   gasConfig: GasConfig;
 }
 
@@ -34,7 +32,6 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
   records,
   onOpenUploadTab,
   onPreviewReceipt,
-  onOpenSettingsModal,
   gasConfig,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,7 +134,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-black text-neutral-900 tracking-tight flex items-center gap-2">
-                  <span>Leituras Raizen</span>
+                  <span>Leituras Raízen</span>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600 font-mono">
                     Dados_Raizen (Colunas A a K)
                   </span>
@@ -145,11 +142,11 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               </div>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Reflexo Oficial da Base
+                Base Operacional
               </span>
             </div>
             <p className="text-xs text-neutral-500">
-              Espelho oficial com as 11 colunas de A a K da planilha Google Sheets. Os dados são protegidos e salvos na nuvem via Google Drive.
+              Visualização dos registros operacionais da planilha Google Sheets com colunas de A a K.
             </p>
           </div>
 
@@ -157,27 +154,12 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={onOpenSettingsModal}
-              className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-neutral-200"
-              title="Configurar integração com Google Drive e Google Sheets"
-            >
-              <Settings className="w-3.5 h-3.5 text-neutral-600" />
-              <span>Configurar Drive</span>
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  gasConfig.webhookUrl ? 'bg-emerald-500' : 'bg-amber-500'
-                }`}
-              ></span>
-            </button>
-
-            <button
-              type="button"
               onClick={handleRefresh}
               className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Atualizar dados da planilha"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-red-600' : ''}`} />
-              <span>{isRefreshing ? 'Sincronizando...' : 'Atualizar'}</span>
+              <span>{isRefreshing ? 'Atualizando...' : 'Atualizar'}</span>
             </button>
 
             <button
@@ -381,7 +363,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                   <th className="py-1 px-3 text-center">K</th>
                 </tr>
 
-                {/* Primary Red Header Row (Matching User's Raizen Sheet Screenshot) */}
+                {/* Primary Red Header Row */}
                 <tr className="bg-[#E52421] text-white text-xs font-bold select-none border-b border-red-800">
                   {/* Row index indicator */}
                   <th className="py-2.5 px-2.5 w-9 text-center font-mono text-red-200 bg-red-800/80 border-r border-red-700">
@@ -597,7 +579,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-neutral-200 shadow-xs">
         <div className="flex items-center gap-2 text-xs text-neutral-600">
           <HardDrive className="w-4 h-4 text-emerald-600" />
-          <span>Para lançar um novo comprovante na planilha Dados_Raizen, tire a foto na primeira guia.</span>
+          <span>Para enviar novos comprovantes, use a guia Captura de Nota.</span>
         </div>
 
         <button

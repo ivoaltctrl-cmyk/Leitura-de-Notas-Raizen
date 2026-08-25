@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { UploadReceiptTab } from './components/UploadReceiptTab';
 import { SpreadsheetTab } from './components/SpreadsheetTab';
+import { SettingsTab } from './components/SettingsTab';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
-import { GoogleIntegrationModal } from './components/GoogleIntegrationModal';
 import { AbastecimentoRecord, GasConfig } from './types';
 import { INITIAL_RECORDS } from './data/sampleReceipts';
 
@@ -11,8 +11,7 @@ const STORAGE_KEY_RECORDS = 'abastecimento_records_v1';
 const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet'>('upload');
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet' | 'settings'>('upload');
 
   const [records, setRecords] = useState<AbastecimentoRecord[]>(() => {
     try {
@@ -82,43 +81,40 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         recordCount={records.length}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        hasWebhookConfigured={!!gasConfig.webhookUrl}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'upload' ? (
+        {activeTab === 'upload' && (
           <UploadReceiptTab
             gasConfig={gasConfig}
             onAddRecord={handleAddRecord}
             onSwitchToSpreadsheet={() => setActiveTab('spreadsheet')}
-            onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
             recentRecords={records}
           />
-        ) : (
+        )}
+
+        {activeTab === 'spreadsheet' && (
           <SpreadsheetTab
             records={records}
             onUpdateRecord={handleUpdateRecord}
             onDeleteRecord={handleDeleteRecord}
             onOpenUploadTab={() => setActiveTab('upload')}
             onPreviewReceipt={(rec) => setPreviewRecord(rec)}
-            onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
             gasConfig={gasConfig}
+          />
+        )}
+
+        {activeTab === 'settings' && (
+          <SettingsTab
+            gasConfig={gasConfig}
+            onSaveConfig={handleSaveGasConfig}
           />
         )}
       </main>
 
       {/* Receipt Image Preview Modal */}
       <ReceiptPreviewModal record={previewRecord} onClose={() => setPreviewRecord(null)} />
-
-      {/* Google Drive & Sheets Integration Settings Modal */}
-      <GoogleIntegrationModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        gasConfig={gasConfig}
-        onSaveConfig={handleSaveGasConfig}
-      />
     </div>
   );
 }
