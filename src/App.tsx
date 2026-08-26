@@ -91,7 +91,7 @@ export default function App() {
 
       try {
         const result = await fetchRecordsFromSheet(urlToUse);
-        if (!cancelled && result.sucesso && Array.isArray(result.records) && result.records.length > 0) {
+        if (!cancelled && result.sucesso && Array.isArray(result.records)) {
           setRecords(result.records);
         }
       } catch (e) {

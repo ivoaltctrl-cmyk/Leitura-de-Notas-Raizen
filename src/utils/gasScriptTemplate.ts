@@ -243,8 +243,8 @@ var ABASTECIMENTO_CONFIG = {
   MAX_FILE_SIZE_MB: 8
 };
 
-// Mantido o modelo de sua preferência
-var GEMINI_MODEL_ABASTECIMENTO = 'gemini-2.5-flash';
+// Modelo Gemini oficial para Google Apps Script REST v1beta
+var GEMINI_MODEL_ABASTECIMENTO = 'gemini-1.5-flash';
 
 function processarPastaAbastecimentos() {
   var scriptProperties = PropertiesService.getScriptProperties();

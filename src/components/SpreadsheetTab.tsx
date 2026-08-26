@@ -15,6 +15,7 @@ import {
   Layers,
   ExternalLink,
   Clock,
+  Calendar,
   AlertCircle,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
@@ -76,6 +77,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
       const q = searchQuery.toLowerCase();
       return (
         r.numero?.toLowerCase().includes(q) ||
+        r.dataAbastecimento?.toLowerCase().includes(q) ||
         r.cliente?.toLowerCase().includes(q) ||
         r.produto?.toLowerCase().includes(q) ||
         r.horaChegada?.toLowerCase().includes(q) ||
@@ -113,9 +115,11 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
     try {
       const result = await fetchRecordsFromSheet(gasConfig.webhookUrl);
-      if (result.sucesso && result.records) {
+      if (result.sucesso && Array.isArray(result.records)) {
+        // ALWAYS update the state and localStorage with the real sheet state
+        onSetRecords(result.records);
+
         if (result.records.length > 0) {
-          onSetRecords(result.records);
           setSyncStatus({
             type: 'success',
             msg: `Planilha sincronizada! ${result.records.length} linha(s) carregada(s) de Dados_Raizen.`,
@@ -123,7 +127,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
         } else {
           setSyncStatus({
             type: 'info',
-            msg: 'Conexão efetuada com sucesso: a planilha online ainda não possui lançamentos preenchidos.',
+            msg: 'Conexão efetuada com sucesso: a planilha online Dados_Raizen está vazia (0 registros).',
           });
         }
       } else {
@@ -173,7 +177,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               <h2 className="text-base sm:text-lg font-black text-neutral-900 tracking-tight flex items-center gap-2">
                 <span>Leituras Raízen</span>
                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600 font-mono">
-                  Dados_Raizen (Colunas A a K)
+                  Dados_Raizen (Colunas A a L)
                 </span>
               </h2>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -283,7 +287,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
           <div className="bg-neutral-50 border border-neutral-200/90 rounded-xl p-3 space-y-0.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1">
-              <TableIcon className="w-3 h-3 text-blue-600" />
+              <TableIcon className="w-3.5 h-3.5" />
               Total de Ordens (O.S.)
             </span>
             <div className="text-base sm:text-lg font-black text-neutral-900">
@@ -322,7 +326,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
           <input
             id="input-search-spreadsheet"
             type="text"
-            placeholder="Buscar por O.S., Cliente, Horários, Produto, Obs..."
+            placeholder="Buscar por O.S., Data, Cliente, Horários, Produto, Obs..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 text-xs border border-neutral-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-red-500 text-neutral-800 bg-neutral-50/50"
@@ -389,7 +393,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
           <div className="flex items-center space-x-2">
             <div className="w-2.5 h-2.5 rounded-xs bg-emerald-500"></div>
             <span className="tracking-wide font-mono text-[11px]">
-              Leituras Raizen • Aba: Dados_Raizen (Colunas A1:K{Math.max(records.length + 1, 2)})
+              Leituras Raizen • Aba: Dados_Raizen (Colunas A1:L{Math.max(records.length + 1, 2)})
             </span>
           </div>
           <span className="text-[11px] text-neutral-400 font-normal">
@@ -403,11 +407,11 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
               <FileSpreadsheet className="w-6 h-6" />
             </div>
             <div className="text-sm font-bold text-neutral-800">
-              {records.length === 0 ? 'Nenhum lançamento registrado ainda' : 'Nenhum registro corresponde aos filtros'}
+              {records.length === 0 ? 'Nenhum lançamento registrado na planilha' : 'Nenhum registro corresponde aos filtros'}
             </div>
             <p className="text-xs text-neutral-500 max-w-sm mx-auto">
               {records.length === 0
-                ? 'Clique no botão "Atualizar Planilha" acima para sincronizar com o Google Sheets ou tire uma foto na aba "Captura de Nota".'
+                ? 'A aba "Dados_Raizen" do Google Sheets está vazia ou aguardando novos abastecimentos. Tire uma foto na aba "Captura de Nota" ou envie pelo robô.'
                 : 'Tente redefinir os filtros de busca para visualizar os registros.'}
             </p>
             <div className="flex items-center justify-center gap-2 pt-2">
@@ -433,22 +437,23 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
         ) : (
           <div className="w-full overflow-x-auto">
             <table className="w-full text-left text-[11px] border-collapse font-sans">
-              {/* Column Letter Markers (A, B, C, D, E, F, G, H, I, J, K) */}
+              {/* Column Letter Markers (A to L) */}
               <thead>
                 {/* Column Letters Bar */}
                 <tr className="bg-neutral-200/90 text-neutral-600 text-[9px] font-mono select-none border-b border-neutral-300">
                   <th className="py-0.5 px-1 text-center border-r border-neutral-300 w-7">#</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">A</th>
-                  <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">B</th>
-                  <th className="py-0.5 px-2 text-center border-r border-neutral-300">C</th>
-                  <th className="py-0.5 px-1 text-center border-r border-neutral-300">D</th>
+                  <th className="py-0.5 px-1.5 text-center border-r border-neutral-300 bg-amber-100 text-amber-900 font-bold">B</th>
+                  <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">C</th>
+                  <th className="py-0.5 px-2 text-center border-r border-neutral-300">D</th>
                   <th className="py-0.5 px-1 text-center border-r border-neutral-300">E</th>
-                  <th className="py-0.5 px-1 text-center border-r border-neutral-300 bg-red-100 text-red-800 font-bold">F</th>
-                  <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">G</th>
+                  <th className="py-0.5 px-1 text-center border-r border-neutral-300">F</th>
+                  <th className="py-0.5 px-1 text-center border-r border-neutral-300 bg-red-100 text-red-800 font-bold">G</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">H</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">I</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">J</th>
-                  <th className="py-0.5 px-1.5 text-center">K</th>
+                  <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">K</th>
+                  <th className="py-0.5 px-1.5 text-center">L</th>
                 </tr>
 
                 {/* Primary Red Header Row */}
@@ -463,27 +468,35 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                     Número
                   </th>
 
-                  {/* Col B: Forma de Pagamento */}
+                  {/* Col B: Data do Abastecimento */}
+                  <th className="py-2 px-2 border-r border-red-700 whitespace-nowrap bg-red-700">
+                    <div className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-amber-300 shrink-0" />
+                      <span>Data</span>
+                    </div>
+                  </th>
+
+                  {/* Col C: Forma de Pagamento */}
                   <th className="py-2 px-2 border-r border-red-700 whitespace-nowrap">
                     Forma de Pagto
                   </th>
 
-                  {/* Col C: Cliente */}
+                  {/* Col D: Cliente */}
                   <th className="py-2 px-2 border-r border-red-700 whitespace-nowrap">
                     Cliente
                   </th>
 
-                  {/* Col D: Hora da Chegada */}
+                  {/* Col E: Hora da Chegada */}
                   <th className="py-2 px-1.5 border-r border-red-700 text-center whitespace-nowrap">
                     Chegada
                   </th>
 
-                  {/* Col E: Início do Abastecimento */}
+                  {/* Col F: Início do Abastecimento */}
                   <th className="py-2 px-1.5 border-r border-red-700 text-center whitespace-nowrap">
                     Início
                   </th>
 
-                  {/* Col F: Término do Abastecimento */}
+                  {/* Col G: Término do Abastecimento */}
                   <th className="py-2 px-1.5 border-r border-red-700 text-center whitespace-nowrap bg-red-700">
                     <div className="flex items-center justify-center gap-1">
                       <Clock className="w-3 h-3 text-yellow-300 shrink-0" />
@@ -491,27 +504,27 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                     </div>
                   </th>
 
-                  {/* Col G: Produto */}
+                  {/* Col H: Produto */}
                   <th className="py-2 px-2 border-r border-red-700 whitespace-nowrap">
                     Produto
                   </th>
 
-                  {/* Col H: Volume */}
+                  {/* Col I: Volume */}
                   <th className="py-2 px-2 border-r border-red-700 text-right whitespace-nowrap">
                     Volume
                   </th>
 
-                  {/* Col I: Obs.: */}
+                  {/* Col J: Obs.: */}
                   <th className="py-2 px-2 border-r border-red-700 whitespace-nowrap">
                     Obs.:
                   </th>
 
-                  {/* Col J: Assinatura do Cliente */}
+                  {/* Col K: Assinatura do Cliente */}
                   <th className="py-2 px-2 border-r border-red-700 whitespace-nowrap">
                     Assinatura
                   </th>
 
-                  {/* Col K: Foto da Nota */}
+                  {/* Col L: Foto da Nota */}
                   <th className="py-2 px-1.5 text-center whitespace-nowrap">
                     Foto da Nota
                   </th>
@@ -532,14 +545,19 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
                     {/* Col A: Número */}
                     <td className="py-2 px-2 border-r border-neutral-100 font-mono">
-                      <div className="max-w-[140px] truncate" title={r.numero || r.fileName}>
+                      <div className="max-w-[130px] truncate" title={r.numero || r.fileName}>
                         <span className="font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-md text-[10px]">
                           {r.numero || `OS-${String(index + 1).padStart(4, '0')}`}
                         </span>
                       </div>
                     </td>
 
-                    {/* Col B: Forma de Pagamento */}
+                    {/* Col B: Data do Abastecimento */}
+                    <td className="py-2 px-2 border-r border-neutral-100 font-mono text-neutral-800 whitespace-nowrap font-semibold text-[10px]">
+                      {r.dataAbastecimento || (r.dataCriacao ? new Date(r.dataCriacao).toLocaleDateString('pt-BR') : '-')}
+                    </td>
+
+                    {/* Col C: Forma de Pagamento */}
                     <td className="py-2 px-2 border-r border-neutral-100 whitespace-nowrap">
                       <span
                         className={`inline-block px-1.5 py-0.5 rounded-md text-[9px] font-bold ${
@@ -554,24 +572,24 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                       </span>
                     </td>
 
-                    {/* Col C: Cliente */}
+                    {/* Col D: Cliente */}
                     <td className="py-2 px-2 border-r border-neutral-100 font-bold text-neutral-900">
-                      <div className="truncate max-w-[170px]" title={r.cliente || 'WFS / RAÍZEN'}>
+                      <div className="truncate max-w-[160px]" title={r.cliente || 'WFS / RAÍZEN'}>
                         {r.cliente || 'WFS / RAÍZEN'}
                       </div>
                     </td>
 
-                    {/* Col D: Hora da Chegada */}
+                    {/* Col E: Hora da Chegada */}
                     <td className="py-2 px-1.5 border-r border-neutral-100 text-center font-mono text-neutral-700 whitespace-nowrap">
                       {r.horaChegada || '-'}
                     </td>
 
-                    {/* Col E: Início do Abastecimento */}
+                    {/* Col F: Início do Abastecimento */}
                     <td className="py-2 px-1.5 border-r border-neutral-100 text-center font-mono text-neutral-700 whitespace-nowrap">
                       {r.inicioAbastecimento || '-'}
                     </td>
 
-                    {/* Col F: Término do Abastecimento */}
+                    {/* Col G: Término do Abastecimento */}
                     <td className="py-2 px-1.5 border-r border-neutral-100 text-center font-mono font-semibold text-neutral-800 bg-neutral-50/30 whitespace-nowrap">
                       {r.terminoAbastecimento ? (
                         <span className="text-neutral-900 bg-neutral-100 px-1.5 py-0.5 rounded-md border border-neutral-200">
@@ -582,34 +600,34 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                       )}
                     </td>
 
-                    {/* Col G: Produto */}
+                    {/* Col H: Produto */}
                     <td className="py-2 px-2 border-r border-neutral-100 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1 font-semibold text-neutral-800">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0"></span>
-                        <span className="truncate max-w-[90px]">{r.produto || 'DIESEL'}</span>
+                        <span className="truncate max-w-[85px]">{r.produto || 'DIESEL'}</span>
                       </span>
                     </td>
 
-                    {/* Col H: Volume */}
+                    {/* Col I: Volume */}
                     <td className="py-2 px-2 border-r border-neutral-100 text-right font-mono font-bold text-neutral-900 whitespace-nowrap">
                       {r.volume ? (r.volume.includes('L') ? r.volume : `${r.volume} L`) : '-'}
                     </td>
 
-                    {/* Col I: Obs.: */}
+                    {/* Col J: Obs.: */}
                     <td className="py-2 px-2 border-r border-neutral-100 text-neutral-600">
-                      <div className="truncate max-w-[140px]" title={r.obs || '-'}>
+                      <div className="truncate max-w-[130px]" title={r.obs || '-'}>
                         {r.obs || '-'}
                       </div>
                     </td>
 
-                    {/* Col J: Assinatura do Cliente */}
+                    {/* Col K: Assinatura do Cliente */}
                     <td className="py-2 px-2 border-r border-neutral-100 text-neutral-700">
-                      <div className="truncate max-w-[130px] font-medium" title={r.assinaturaCliente || '-'}>
+                      <div className="truncate max-w-[120px] font-medium" title={r.assinaturaCliente || '-'}>
                         {r.assinaturaCliente || '-'}
                       </div>
                     </td>
 
-                    {/* Col K: Foto da Nota */}
+                    {/* Col L: Foto da Nota */}
                     <td className="py-2 px-1.5 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
                         {r.fotoBase64 ? (
@@ -648,7 +666,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                   <td colSpan={2} className="py-2.5 px-2 text-center font-mono bg-neutral-200/70 border-r border-neutral-300">
                     TOTAIS
                   </td>
-                  <td colSpan={6} className="py-2.5 px-2 border-r border-neutral-300 text-neutral-600">
+                  <td colSpan={7} className="py-2.5 px-2 border-r border-neutral-300 text-neutral-600">
                     {filteredRecords.length} ORDEM(NS) DE SERVIÇO EM DADOS_RAIZEN
                   </td>
                   <td className="py-2.5 px-2 text-right font-mono font-black text-red-700 border-r border-neutral-300 whitespace-nowrap">
