@@ -83,13 +83,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!gasConfig.webhookUrl || gasConfig.webhookUrl === DEFAULT_WEBHOOK_URL) return;
-
     let cancelled = false;
 
     const syncFromServer = async () => {
+      const urlToUse = gasConfig.webhookUrl || DEFAULT_WEBHOOK_URL;
+      if (!urlToUse) return;
+
       try {
-        const result = await fetchRecordsFromSheet(gasConfig.webhookUrl);
+        const result = await fetchRecordsFromSheet(urlToUse);
         if (!cancelled && result.sucesso && Array.isArray(result.records) && result.records.length > 0) {
           setRecords(result.records);
         }
