@@ -208,25 +208,52 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
   const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
   const targetSheet = sheetUrl?.trim() || '';
 
+  const normalizeRecords = (list: any[]): AbastecimentoRecord[] => {
+    if (!Array.isArray(list)) return [];
+    return list.map((r: any, idx: number) => ({
+      id: r.id || `sheet-row-${idx + 1}-${r.numero || r['Número'] || idx}`,
+      numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
+      dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
+      formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
+      cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
+      horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
+      inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
+      terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
+      produto: r.produto || r['Produto'] || 'DIESEL',
+      volume: r.volume || r['Volume'] || '0,00',
+      obs: r.obs || r['Obs.:'] || r['Obs'] || '',
+      assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
+      driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
+      fileName: r.fileName || (r.numero ? `Comprovante_${r.numero}.jpg` : `Registro_${idx + 1}.jpg`),
+      dataCriacao: r.dataCriacao || new Date().toISOString(),
+      statusEnvio: 'enviado_drive',
+      statusMsg: 'Sincronizado da planilha Dados_Raizen',
+    }));
+  };
+
   // 1. Try fetching via server backend proxy (Fastest, follows 302 redirects, no browser CORS issues)
   try {
-    const res = await fetch('/api/fetch-sheet-records', {
+    const res = await fetch(`/api/fetch-sheet-records?_t=${Date.now()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store',
+      },
       body: JSON.stringify({ webhookUrl: targetUrl, sheetUrl: targetSheet }),
     });
 
     if (res.ok) {
       const data = await res.json();
-      if (data && data.records && Array.isArray(data.records)) {
-        if (data.sucesso !== false) {
-          return {
-            sucesso: true,
-            mensagem: data.mensagem || `Sincronizado com o Google Sheets (${data.records.length} registros).`,
-            records: data.records,
-            total: data.records.length,
-          };
-        }
+      if (data && Array.isArray(data.records)) {
+        const normalized = normalizeRecords(data.records);
+        return {
+          sucesso: data.sucesso !== false,
+          mensagem: data.mensagem || (normalized.length > 0 
+            ? `Sincronizado com o Google Sheets (${normalized.length} registros).` 
+            : 'Planilha sincronizada! A aba Dados_Raizen está vazia (0 registros).'),
+          records: normalized,
+          total: normalized.length,
+        };
       }
     }
   } catch (err: any) {
@@ -239,11 +266,14 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
       const jsonpData = await fetchWithJsonp(targetUrl, 7000);
       const recList = jsonpData?.records || jsonpData?.dados || (Array.isArray(jsonpData) ? jsonpData : null);
       if (recList && Array.isArray(recList)) {
+        const normalized = normalizeRecords(recList);
         return {
           sucesso: true,
-          mensagem: 'Dados carregados da planilha via JSONP com sucesso!',
-          records: recList,
-          total: recList.length,
+          mensagem: normalized.length > 0
+            ? 'Dados carregados da planilha via JSONP com sucesso!'
+            : 'Planilha sincronizada via JSONP (0 registros encontrados na aba).',
+          records: normalized,
+          total: normalized.length,
         };
       }
     } catch (jsonpErr: any) {
@@ -254,21 +284,29 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
   // 3. Fallback direct browser GET if webhook is available
   if (targetUrl) {
     try {
-      const getUrl = targetUrl.includes('?') ? `${targetUrl}&action=get_sheet_data` : `${targetUrl}?action=get_sheet_data`;
+      const getUrl = targetUrl.includes('?') 
+        ? `${targetUrl}&action=get_sheet_data&_t=${Date.now()}` 
+        : `${targetUrl}?action=get_sheet_data&_t=${Date.now()}`;
       const directRes = await fetch(getUrl, {
         method: 'GET',
-        headers: { 'Accept': 'application/json' },
+        headers: { 
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache, no-store' 
+        },
       });
 
       if (directRes.ok) {
         const json = await directRes.json();
         const recList = json.records || json.dados || (Array.isArray(json) ? json : null);
         if (recList && Array.isArray(recList)) {
+          const normalized = normalizeRecords(recList);
           return {
             sucesso: true,
-            mensagem: 'Dados carregados da planilha com sucesso!',
-            records: recList,
-            total: recList.length,
+            mensagem: normalized.length > 0
+              ? 'Dados carregados da planilha com sucesso!'
+              : 'Planilha sincronizada! A aba Dados_Raizen está vazia.',
+            records: normalized,
+            total: normalized.length,
           };
         }
       }

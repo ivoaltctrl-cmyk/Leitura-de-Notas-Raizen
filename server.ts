@@ -147,20 +147,21 @@ async function extractReceiptWithGemini(base64: string, mimeType: string) {
   const ai = getGeminiClient();
 
   const prompt = `Você é um especialista de alta precisão em leitura e extração de ordens de serviço e comprovantes de abastecimento de combustível e aviação (WFS / Raízen).
-Analise a imagem da nota de abastecimento fornecida e extraia exatamente as 10 informações necessárias para as colunas da planilha oficial "Dados_Raizen":
+Analise a imagem da nota de abastecimento fornecida e extraia exatamente as informações necessárias para as colunas da planilha oficial "Dados_Raizen":
 
 Campos obrigatórios:
 1. "numero": Número da nota / Ordem de Serviço / Nro OS (ex: "2293305" ou "123456")
-2. "formaPagamento": Forma de pagamento (ex: "CONTRATO", "A VISTA", "FATURADO", "BOLETO", "CARTAO", "CREDITO", "CONVENIO")
-3. "cliente": Razão social / Nome do cliente ou empresa atendida (ex: "ORBITAL SERV AUX TRANSP AEREO", "SWISSPORT", "DNATA", "GOL", "LATAM", "AZUL")
-4. "horaChegada": Horário de chegada no formato HH:MM (ex: "07:13" ou "10:15")
-5. "inicioAbastecimento": Horário de início do abastecimento no formato HH:MM (ex: "07:14" ou "10:20")
-6. "terminoAbastecimento": Horário de término / fim do abastecimento no formato HH:MM (ex: "07:22" ou "10:35"). Se não houver horário explícito de término, deduza com base no início + tempo estimado ou deixe vazio.
-7. "produto": Tipo de combustível / produto (ex: "DIESEL", "DIESEL S10", "JET A-1", "GASOLINA", "AVGAS")
-8. "volume": Quantidade / volume abastecido em Litros formatado com vírgula (ex: "224,00" ou "1.450,00" ou "50,00")
-9. "obs": Observações, prefixo de aeronave, placa, gerador ou equipamento (ex: "GE135", "TRATOR T-04 / PR-GUZ", "REBOCADOR RB-09")
-10. "assinaturaCliente": Nome legível e matrícula de quem assinou / conferiu (ex: "joanilson 304371" ou "marcos 441029")
-11. "confidenceNotes": Breve resumo da qualidade visual da leitura.`;
+2. "dataAbastecimento": Data do abastecimento no formato DD/MM/AAAA (ex: "26/08/2026"). Se não houver ano explícito, use a data atual.
+3. "formaPagamento": Forma de pagamento (ex: "CONTRATO", "A VISTA", "FATURADO", "BOLETO", "CARTAO", "CREDITO", "CONVENIO")
+4. "cliente": Razão social / Nome do cliente ou empresa atendida (ex: "ORBITAL SERV AUX TRANSP AEREO", "SWISSPORT", "DNATA", "GOL", "LATAM", "AZUL")
+5. "horaChegada": Horário de chegada no formato HH:MM (ex: "07:13" ou "10:15")
+6. "inicioAbastecimento": Horário de início do abastecimento no formato HH:MM (ex: "07:14" ou "10:20")
+7. "terminoAbastecimento": Horário de término / fim do abastecimento no formato HH:MM (ex: "07:22" ou "10:35"). Se não houver horário explícito de término, deduza com base no início + tempo estimado ou deixe vazio.
+8. "produto": Tipo de combustível / produto (ex: "DIESEL", "DIESEL S10", "JET A-1", "GASOLINA", "AVGAS")
+9. "volume": Quantidade / volume abastecido em Litros formatado com vírgula (ex: "224,00" ou "1.450,00" ou "50,00")
+10. "obs": Observações, prefixo de aeronave, placa, gerador ou equipamento (ex: "GE135", "TRATOR T-04 / PR-GUZ", "REBOCADOR RB-09")
+11. "assinaturaCliente": Nome legível e matrícula de quem assinou / conferiu (ex: "joanilson 304371" ou "marcos 441029")
+12. "confidenceNotes": Breve resumo da qualidade visual da leitura.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3.7-flash',
@@ -183,15 +184,16 @@ Campos obrigatórios:
         type: Type.OBJECT,
         properties: {
           numero: { type: Type.STRING, description: 'Número do comprovante/OS (Coluna A)' },
-          formaPagamento: { type: Type.STRING, description: 'Forma de pagamento (Coluna B)' },
-          cliente: { type: Type.STRING, description: 'Nome do cliente/empresa (Coluna C)' },
-          horaChegada: { type: Type.STRING, description: 'Hora da chegada HH:MM (Coluna D)' },
-          inicioAbastecimento: { type: Type.STRING, description: 'Início do abastecimento HH:MM (Coluna E)' },
-          terminoAbastecimento: { type: Type.STRING, description: 'Término do abastecimento HH:MM (Coluna F)' },
-          produto: { type: Type.STRING, description: 'Produto/Combustível (Coluna G)' },
-          volume: { type: Type.STRING, description: 'Volume abastecido em litros ex: 224,00 (Coluna H)' },
-          obs: { type: Type.STRING, description: 'Observações, placa, equipamento (Coluna I)' },
-          assinaturaCliente: { type: Type.STRING, description: 'Assinatura e matrícula do cliente (Coluna J)' },
+          dataAbastecimento: { type: Type.STRING, description: 'Data do abastecimento formato DD/MM/AAAA (Coluna B)' },
+          formaPagamento: { type: Type.STRING, description: 'Forma de pagamento (Coluna C)' },
+          cliente: { type: Type.STRING, description: 'Nome do cliente/empresa (Coluna D)' },
+          horaChegada: { type: Type.STRING, description: 'Hora da chegada HH:MM (Coluna E)' },
+          inicioAbastecimento: { type: Type.STRING, description: 'Início do abastecimento HH:MM (Coluna F)' },
+          terminoAbastecimento: { type: Type.STRING, description: 'Término do abastecimento HH:MM (Coluna G)' },
+          produto: { type: Type.STRING, description: 'Produto/Combustível (Coluna H)' },
+          volume: { type: Type.STRING, description: 'Volume abastecido em litros ex: 224,00 (Coluna I)' },
+          obs: { type: Type.STRING, description: 'Observações, placa, equipamento (Coluna J)' },
+          assinaturaCliente: { type: Type.STRING, description: 'Assinatura e matrícula do cliente (Coluna K)' },
           confidenceNotes: { type: Type.STRING, description: 'Notas de confiança da leitura' },
         },
         required: [
@@ -302,6 +304,7 @@ app.post('/api/process-receipt-flow', async (req, res) => {
           fileName: fileName || `NOTA_${extractedData.numero || Date.now()}.jpg`,
           dados: {
             numero: extractedData.numero || '',
+            dataAbastecimento: extractedData.dataAbastecimento || new Date().toLocaleDateString('pt-BR'),
             formaPagamento: extractedData.formaPagamento || 'CONTRATO',
             cliente: extractedData.cliente || '',
             horaChegada: extractedData.horaChegada || '',
@@ -349,11 +352,12 @@ app.post('/api/process-receipt-flow', async (req, res) => {
       pipelineMessage = 'Processado pelo Back e espelhado no Front. (Configure a URL do Google Apps Script para salvar no Drive e Sheets em tempo real)';
     }
 
-    // 3. FRONT: Retorno unificado com todos os 11 campos e status do Drive
+    // 3. FRONT: Retorno unificado com todos os campos e status do Drive
     const recordId = `rec-${Date.now()}`;
     const consolidatedRecord = {
       id: recordId,
       numero: extractedData.numero || `OS-${Date.now().toString().slice(-4)}`,
+      dataAbastecimento: extractedData.dataAbastecimento || new Date().toLocaleDateString('pt-BR'),
       formaPagamento: extractedData.formaPagamento || 'CONTRATO',
       cliente: extractedData.cliente || 'WFS / RAÍZEN',
       horaChegada: extractedData.horaChegada || '',
@@ -404,7 +408,11 @@ function parseGVizResponse(text: string) {
   }
 
   const rows = data.table.rows;
+  const cols = data.table.cols || [];
   const records: any[] = [];
+
+  const colLabels = cols.map((c: any) => String(c?.label || '').toLowerCase());
+  const hasDateCol = colLabels.some((l: string) => l.includes('data'));
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -419,36 +427,65 @@ function parseGVizResponse(text: string) {
       return '';
     };
 
-    const colA = getVal(0); // Número
-    const colB = getVal(1); // Forma de Pagamento
-    const colC = getVal(2); // Cliente
-    const colD = getVal(3); // Hora da Chegada
-    const colE = getVal(4); // Início do Abastecimento
-    const colF = getVal(5); // Término do Abastecimento
-    const colG = getVal(6); // Produto
-    const colH = getVal(7); // Volume
-    const colI = getVal(8); // Obs.:
-    const colJ = getVal(9); // Assinatura do Cliente
-    const colK = getVal(10); // Foto da Nota
+    let colNumero = '';
+    let colData = '';
+    let colForma = '';
+    let colCliente = '';
+    let colChegada = '';
+    let colInicio = '';
+    let colTermino = '';
+    let colProduto = '';
+    let colVolume = '';
+    let colObs = '';
+    let colAssinatura = '';
+    let colFoto = '';
+
+    if (hasDateCol || cells.length >= 12) {
+      colNumero = getVal(0);
+      colData = getVal(1);
+      colForma = getVal(2);
+      colCliente = getVal(3);
+      colChegada = getVal(4);
+      colInicio = getVal(5);
+      colTermino = getVal(6);
+      colProduto = getVal(7);
+      colVolume = getVal(8);
+      colObs = getVal(9);
+      colAssinatura = getVal(10);
+      colFoto = getVal(11);
+    } else {
+      colNumero = getVal(0);
+      colForma = getVal(1);
+      colCliente = getVal(2);
+      colChegada = getVal(3);
+      colInicio = getVal(4);
+      colTermino = getVal(5);
+      colProduto = getVal(6);
+      colVolume = getVal(7);
+      colObs = getVal(8);
+      colAssinatura = getVal(9);
+      colFoto = getVal(10);
+    }
 
     // Skip empty rows
-    if (!colA && !colC && !colH && !colG) continue;
+    if (!colNumero && !colCliente && !colVolume && !colProduto) continue;
     // Skip header row if it matches column titles
-    if (colA.toLowerCase() === 'número' || colA.toLowerCase() === 'numero' || colC.toLowerCase() === 'cliente') continue;
+    if (colNumero.toLowerCase() === 'número' || colNumero.toLowerCase() === 'numero' || colCliente.toLowerCase() === 'cliente') continue;
 
     records.push({
-      id: `sheet-row-${i + 2}-${colA || i}`,
-      numero: colA || `OS-${String(i + 1).padStart(4, '0')}`,
-      formaPagamento: colB || 'CONTRATO',
-      cliente: colC || 'WFS / RAÍZEN',
-      horaChegada: colD || '',
-      inicioAbastecimento: colE || '',
-      terminoAbastecimento: colF || '',
-      produto: colG || 'DIESEL',
-      volume: colH || '0,00',
-      obs: colI || '',
-      assinaturaCliente: colJ || '',
-      driveFileUrl: colK || '',
+      id: `sheet-row-${i + 2}-${colNumero || i}`,
+      numero: colNumero || `OS-${String(i + 1).padStart(4, '0')}`,
+      dataAbastecimento: colData || '',
+      formaPagamento: colForma || 'CONTRATO',
+      cliente: colCliente || 'WFS / RAÍZEN',
+      horaChegada: colChegada || '',
+      inicioAbastecimento: colInicio || '',
+      terminoAbastecimento: colTermino || '',
+      produto: colProduto || 'DIESEL',
+      volume: colVolume || '0,00',
+      obs: colObs || '',
+      assinaturaCliente: colAssinatura || '',
+      driveFileUrl: colFoto || '',
       dataCriacao: new Date().toISOString(),
       statusEnvio: 'enviado_drive',
       statusMsg: 'Sincronizado da planilha Google Sheets',
@@ -464,6 +501,9 @@ function parseCSVRows(csvText: string) {
   if (lines.length <= 1) return [];
 
   const records: any[] = [];
+  const headerLine = lines[0].toLowerCase();
+  const hasDateCol = headerLine.includes('data');
+
   // Skip header (index 0)
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
@@ -480,38 +520,69 @@ function parseCSVRows(csvText: string) {
         cells.push(currentCell.trim());
         currentCell = '';
       } else {
-        currentCell += char;
+        cells.push(currentCell.trim());
       }
     }
     cells.push(currentCell.trim());
 
-    const colA = (cells[0] || '').replace(/^["']|["']$/g, '').trim();
-    const colB = (cells[1] || '').replace(/^["']|["']$/g, '').trim();
-    const colC = (cells[2] || '').replace(/^["']|["']$/g, '').trim();
-    const colD = (cells[3] || '').replace(/^["']|["']$/g, '').trim();
-    const colE = (cells[4] || '').replace(/^["']|["']$/g, '').trim();
-    const colF = (cells[5] || '').replace(/^["']|["']$/g, '').trim();
-    const colG = (cells[6] || '').replace(/^["']|["']$/g, '').trim();
-    const colH = (cells[7] || '').replace(/^["']|["']$/g, '').trim();
-    const colI = (cells[8] || '').replace(/^["']|["']$/g, '').trim();
-    const colJ = (cells[9] || '').replace(/^["']|["']$/g, '').trim();
-    const colK = (cells[10] || '').replace(/^["']|["']$/g, '').trim();
+    const clean = (idx: number) => (cells[idx] || '').replace(/^["']|["']$/g, '').trim();
 
-    if (!colA && !colC && !colH) continue;
+    let colNumero = '';
+    let colData = '';
+    let colForma = '';
+    let colCliente = '';
+    let colChegada = '';
+    let colInicio = '';
+    let colTermino = '';
+    let colProduto = '';
+    let colVolume = '';
+    let colObs = '';
+    let colAssinatura = '';
+    let colFoto = '';
+
+    if (hasDateCol || cells.length >= 12) {
+      colNumero = clean(0);
+      colData = clean(1);
+      colForma = clean(2);
+      colCliente = clean(3);
+      colChegada = clean(4);
+      colInicio = clean(5);
+      colTermino = clean(6);
+      colProduto = clean(7);
+      colVolume = clean(8);
+      colObs = clean(9);
+      colAssinatura = clean(10);
+      colFoto = clean(11);
+    } else {
+      colNumero = clean(0);
+      colForma = clean(1);
+      colCliente = clean(2);
+      colChegada = clean(3);
+      colInicio = clean(4);
+      colTermino = clean(5);
+      colProduto = clean(6);
+      colVolume = clean(7);
+      colObs = clean(8);
+      colAssinatura = clean(9);
+      colFoto = clean(10);
+    }
+
+    if (!colNumero && !colCliente && !colVolume) continue;
 
     records.push({
-      id: `csv-row-${i + 1}-${colA || i}`,
-      numero: colA || `OS-${String(i).padStart(4, '0')}`,
-      formaPagamento: colB || 'CONTRATO',
-      cliente: colC || 'WFS / RAÍZEN',
-      horaChegada: colD || '',
-      inicioAbastecimento: colE || '',
-      terminoAbastecimento: colF || '',
-      produto: colG || 'DIESEL',
-      volume: colH || '0,00',
-      obs: colI || '',
-      assinaturaCliente: colJ || '',
-      driveFileUrl: colK || '',
+      id: `csv-row-${i + 1}-${colNumero || i}`,
+      numero: colNumero || `OS-${String(i).padStart(4, '0')}`,
+      dataAbastecimento: colData || '',
+      formaPagamento: colForma || 'CONTRATO',
+      cliente: colCliente || 'WFS / RAÍZEN',
+      horaChegada: colChegada || '',
+      inicioAbastecimento: colInicio || '',
+      terminoAbastecimento: colTermino || '',
+      produto: colProduto || 'DIESEL',
+      volume: colVolume || '0,00',
+      obs: colObs || '',
+      assinaturaCliente: colAssinatura || '',
+      driveFileUrl: colFoto || '',
       dataCriacao: new Date().toISOString(),
       statusEnvio: 'enviado_drive',
       statusMsg: 'Sincronizado via exportação da planilha',
@@ -523,6 +594,10 @@ function parseCSVRows(csvText: string) {
 
 // Endpoint to fetch real rows directly from Google Sheets via Google Apps Script or Google Sheets URL
 app.post('/api/fetch-sheet-records', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   try {
     const { webhookUrl, sheetUrl } = req.body;
     const targetWebhook =
@@ -643,17 +718,18 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
           // Standardize record format
           const formattedRecords = recordsList.map((r: any, idx: number) => ({
             id: r.id || `sheet-row-${idx + 1}`,
-            numero: r.numero || `OS-${String(idx + 1).padStart(4, '0')}`,
-            formaPagamento: r.formaPagamento || 'CONTRATO',
-            cliente: r.cliente || 'WFS / RAÍZEN',
-            horaChegada: r.horaChegada || '',
-            inicioAbastecimento: r.inicioAbastecimento || '',
-            terminoAbastecimento: r.terminoAbastecimento || '',
-            produto: r.produto || 'DIESEL',
-            volume: r.volume || '0,00',
-            obs: r.obs || '',
-            assinaturaCliente: r.assinaturaCliente || '',
-            driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || '',
+            numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
+            dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
+            formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
+            cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
+            horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
+            inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
+            terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
+            produto: r.produto || r['Produto'] || 'DIESEL',
+            volume: r.volume || r['Volume'] || '0,00',
+            obs: r.obs || r['Obs.:'] || r['Obs'] || '',
+            assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
+            driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
             dataCriacao: r.dataCriacao || new Date().toISOString(),
             statusEnvio: 'enviado_drive',
             statusMsg: 'Sincronizado da planilha Dados_Raizen',
@@ -698,17 +774,18 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
         if (recordsList && Array.isArray(recordsList)) {
           const formattedRecords = recordsList.map((r: any, idx: number) => ({
             id: r.id || `sheet-row-${idx + 1}`,
-            numero: r.numero || `OS-${String(idx + 1).padStart(4, '0')}`,
-            formaPagamento: r.formaPagamento || 'CONTRATO',
-            cliente: r.cliente || 'WFS / RAÍZEN',
-            horaChegada: r.horaChegada || '',
-            inicioAbastecimento: r.inicioAbastecimento || '',
-            terminoAbastecimento: r.terminoAbastecimento || '',
-            produto: r.produto || 'DIESEL',
-            volume: r.volume || '0,00',
-            obs: r.obs || '',
-            assinaturaCliente: r.assinaturaCliente || '',
-            driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || '',
+            numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
+            dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
+            formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
+            cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
+            horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
+            inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
+            terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
+            produto: r.produto || r['Produto'] || 'DIESEL',
+            volume: r.volume || r['Volume'] || '0,00',
+            obs: r.obs || r['Obs.:'] || r['Obs'] || '',
+            assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
+            driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
             dataCriacao: r.dataCriacao || new Date().toISOString(),
             statusEnvio: 'enviado_drive',
             statusMsg: 'Sincronizado da planilha Dados_Raizen',

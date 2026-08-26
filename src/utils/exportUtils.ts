@@ -19,6 +19,7 @@ import { AbastecimentoRecord } from '../types';
 export function exportToExcelXLSX(records: AbastecimentoRecord[], filename: string = 'Dados_Raizen_Abastecimento.xlsx') {
   const data = records.map((r, idx) => ({
     'Número': r.numero || `OS-${String(idx + 1).padStart(4, '0')}`,
+    'Data do Abastecimento': r.dataAbastecimento || (r.dataCriacao ? new Date(r.dataCriacao).toLocaleDateString('pt-BR') : '-'),
     'Forma de Pagamento': r.formaPagamento || 'CONTRATO',
     'Cliente': r.cliente || 'WFS AEROPORTO',
     'Hora da Chegada': r.horaChegada || '-',
@@ -33,19 +34,20 @@ export function exportToExcelXLSX(records: AbastecimentoRecord[], filename: stri
 
   const worksheet = XLSX.utils.json_to_sheet(data);
 
-  // Set column widths matching A to K
+  // Set column widths
   worksheet['!cols'] = [
     { wch: 16 }, // A: Número
-    { wch: 22 }, // B: Forma de Pagamento
-    { wch: 34 }, // C: Cliente
-    { wch: 18 }, // D: Hora da Chegada
-    { wch: 24 }, // E: Início do Abastecimento
-    { wch: 24 }, // F: Término do Abastecimento
-    { wch: 16 }, // G: Produto
-    { wch: 14 }, // H: Volume
-    { wch: 26 }, // I: Obs.:
-    { wch: 24 }, // J: Assinatura do Cliente
-    { wch: 40 }, // K: Foto da Nota
+    { wch: 22 }, // B: Data do Abastecimento
+    { wch: 22 }, // C: Forma de Pagamento
+    { wch: 34 }, // D: Cliente
+    { wch: 18 }, // E: Hora da Chegada
+    { wch: 24 }, // F: Início do Abastecimento
+    { wch: 24 }, // G: Término do Abastecimento
+    { wch: 16 }, // H: Produto
+    { wch: 14 }, // I: Volume
+    { wch: 26 }, // J: Obs.:
+    { wch: 24 }, // K: Assinatura do Cliente
+    { wch: 40 }, // L: Foto da Nota
   ];
 
   const workbook = XLSX.utils.book_new();
@@ -59,6 +61,7 @@ export function exportToExcelXLSX(records: AbastecimentoRecord[], filename: stri
 export function exportToCSV(records: AbastecimentoRecord[], filename: string = 'Dados_Raizen_Abastecimento.csv') {
   const headers = [
     'Número',
+    'Data do Abastecimento',
     'Forma de Pagamento',
     'Cliente',
     'Hora da Chegada',
@@ -73,6 +76,7 @@ export function exportToCSV(records: AbastecimentoRecord[], filename: string = '
 
   const rows = records.map((r, idx) => [
     `"${r.numero || `OS-${String(idx + 1).padStart(4, '0')}`}"`,
+    `"${r.dataAbastecimento || (r.dataCriacao ? new Date(r.dataCriacao).toLocaleDateString('pt-BR') : '-')}"`,
     `"${r.formaPagamento || 'CONTRATO'}"`,
     `"${(r.cliente || 'WFS AEROPORTO').replace(/"/g, '""')}"`,
     `"${r.horaChegada || '-'}"`,
@@ -104,6 +108,7 @@ export function exportToCSV(records: AbastecimentoRecord[], filename: string = '
 export function copyTableAsTSV(records: AbastecimentoRecord[]): Promise<boolean> {
   const headers = [
     'Número',
+    'Data do Abastecimento',
     'Forma de Pagamento',
     'Cliente',
     'Hora da Chegada',
@@ -118,6 +123,7 @@ export function copyTableAsTSV(records: AbastecimentoRecord[]): Promise<boolean>
 
   const rows = records.map((r, idx) => [
     r.numero || `OS-${String(idx + 1).padStart(4, '0')}`,
+    r.dataAbastecimento || (r.dataCriacao ? new Date(r.dataCriacao).toLocaleDateString('pt-BR') : '-'),
     r.formaPagamento || 'CONTRATO',
     r.cliente || 'WFS AEROPORTO',
     r.horaChegada || '-',

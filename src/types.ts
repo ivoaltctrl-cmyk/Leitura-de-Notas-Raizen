@@ -1,6 +1,7 @@
 export interface AbastecimentoRecord {
   id: string;
   numero?: string;
+  dataAbastecimento?: string;
   fotoBase64?: string;
   fotoMimeType?: string;
   fileName: string;
@@ -10,7 +11,7 @@ export interface AbastecimentoRecord {
   dataCriacao: string;
   statusEnvio: 'enviado_drive' | 'pendente' | 'erro';
   statusMsg?: string;
-  // Optional historical/metadata fields if present:
+  // Metadata fields:
   formaPagamento?: string;
   cliente?: string;
   horaChegada?: string;

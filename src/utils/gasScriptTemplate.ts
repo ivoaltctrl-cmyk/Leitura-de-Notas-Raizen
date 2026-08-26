@@ -6,7 +6,7 @@
 
 export const SCRIPT_WEBHOOK_GS = `/**
  * WFS / RAÍZEN - SCRIPT 3 (HÍBRIDO REVALIDADO COM SUPORTE A JSONP E CORS)
- * Baseado 100% no Script 1 funcional + Adição de doGet com suporte a callback/JSONP para o React
+ * Baseado 100% no Script 1 funcional + Leitura dinâmica de cabeçalhos (incluindo Data) + JSONP/CORS
  */
 
 var NOME_ABA = "Dados_Raizen";
@@ -57,7 +57,7 @@ function doGet(e) {
 
 /**
  * Endpoint POST: Salva foto no Drive ou retorna dados
- * (NÃO grava mais linha na planilha)
+ * (NÃO grava mais linha na planilha diretamente)
  */
 function doPost(e) {
   var output;
@@ -68,7 +68,7 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
 
     // 1. Teste de Conexão (Ping)
-    if (data.action === 'ping_test') {
+    if (data.action === 'ping_test' || data.action === 'test') {
       return ContentService.createTextOutput(JSON.stringify({
         sucesso: true,
         mensagem: "Conexão confirmada com sucesso com o Google Drive e Planilha!"
@@ -128,7 +128,7 @@ function doPost(e) {
 }
 
 /**
- * Função para ler a planilha retornando os dados brutos
+ * Função para ler a planilha retornando os dados brutos com mapeamento inteligente de colunas
  */
 function lerRegistrosPlanilha() {
   try {
@@ -145,39 +145,84 @@ function lerRegistrosPlanilha() {
 
     // Pega todos os dados já formatados como exibidos na célula
     var data = sheet.getDataRange().getDisplayValues();
-    if (data.length <= 1) return []; // Retorna vazio se só houver o cabeçalho
+    if (data.length <= 1) return []; // Retorna vazio se só houver o cabeçalho ou estiver vazia
+
+    var header = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
+    
+    // Mapeamento dinâmico de índices por nome do cabeçalho
+    function getIdx(aliases, defaultIdx) {
+      for (var i = 0; i < header.length; i++) {
+        for (var a = 0; a < aliases.length; a++) {
+          if (header[i].indexOf(aliases[a].toLowerCase()) !== -1) return i;
+        }
+      }
+      return defaultIdx;
+    }
+
+    var idxNumero = getIdx(["número", "numero", "nro", "os"], 0);
+    var idxData = getIdx(["data do abastecimento", "data abastecimento", "data"], -1);
+    var idxForma = getIdx(["forma de pagamento", "forma", "pagamento", "pagto"], idxData === 1 ? 2 : 1);
+    var idxCliente = getIdx(["cliente", "empresa", "razao"], idxData === 1 ? 3 : 2);
+    var idxChegada = getIdx(["hora da chegada", "hora chegada", "chegada"], idxData === 1 ? 4 : 3);
+    var idxInicio = getIdx(["início do abastecimento", "inicio do abastecimento", "início", "inicio"], idxData === 1 ? 5 : 4);
+    var idxTermino = getIdx(["término do abastecimento", "termino do abastecimento", "término", "termino", "fim"], idxData === 1 ? 6 : 5);
+    var idxProduto = getIdx(["produto", "combustível", "combustivel"], idxData === 1 ? 7 : 6);
+    var idxVolume = getIdx(["volume", "litros", "quantidade", "qtd"], idxData === 1 ? 8 : 7);
+    var idxObs = getIdx(["obs", "observação", "observacao", "placa"], idxData === 1 ? 9 : 8);
+    var idxAssinatura = getIdx(["assinatura do cliente", "assinatura", "conferido"], idxData === 1 ? 10 : 9);
+    var idxFoto = getIdx(["foto da nota", "foto", "comprovante", "link", "drive"], idxData === 1 ? 11 : 10);
 
     var rows = data.slice(1);
 
-    return rows.map(function(row) {
+    return rows.map(function(row, rIdx) {
+      var numVal = (idxNumero !== -1 && row[idxNumero]) ? row[idxNumero] : ("OS-" + (rIdx + 1));
+      var dataVal = (idxData !== -1 && row[idxData]) ? row[idxData] : "";
+      var formaVal = (idxForma !== -1 && row[idxForma]) ? row[idxForma] : "CONTRATO";
+      var cliVal = (idxCliente !== -1 && row[idxCliente]) ? row[idxCliente] : "";
+      var chegVal = (idxChegada !== -1 && row[idxChegada]) ? row[idxChegada] : "";
+      var iniVal = (idxInicio !== -1 && row[idxInicio]) ? row[idxInicio] : "";
+      var terVal = (idxTermino !== -1 && row[idxTermino]) ? row[idxTermino] : "";
+      var prodVal = (idxProduto !== -1 && row[idxProduto]) ? row[idxProduto] : "DIESEL";
+      var volVal = (idxVolume !== -1 && row[idxVolume]) ? row[idxVolume] : "0,00";
+      var obsVal = (idxObs !== -1 && row[idxObs]) ? row[idxObs] : "";
+      var assVal = (idxAssinatura !== -1 && row[idxAssinatura]) ? row[idxAssinatura] : "";
+      var fotoVal = (idxFoto !== -1 && row[idxFoto]) ? row[idxFoto] : "";
+
+      // Ignora linhas totalmente em branco
+      if (!numVal && !cliVal && !volVal) return null;
+
       return {
-        "Número": row[0] || "",
-        "Forma de Pagamento": row[1] || "",
-        "Cliente": row[2] || "",
-        "Hora da Chegada": row[3] || "",
-        "Início do Abastecimento": row[4] || "",
-        "Término do Abastecimento": row[5] || "",
-        "Produto": row[6] || "",
-        "Volume": row[7] || "",
-        "Obs.:": row[8] || "",
-        "Assinatura do Cliente": row[9] || "",
-        "Foto da Nota": row[10] || "",
+        "id": "sheet-row-" + (rIdx + 2) + "-" + numVal,
+        "Número": numVal,
+        "Data do Abastecimento": dataVal,
+        "Data": dataVal,
+        "Forma de Pagamento": formaVal,
+        "Cliente": cliVal,
+        "Hora da Chegada": chegVal,
+        "Início do Abastecimento": iniVal,
+        "Término do Abastecimento": terVal,
+        "Produto": prodVal,
+        "Volume": volVal,
+        "Obs.:": obsVal,
+        "Assinatura do Cliente": assVal,
+        "Foto da Nota": fotoVal,
         
-        // Mapeamento secundário em camelCase para garantia de compatibilidade com a interface
-        "numero": row[0] || "",
-        "formaPagamento": row[1] || "",
-        "cliente": row[2] || "",
-        "horaChegada": row[3] || "",
-        "inicioAbastecimento": row[4] || "",
-        "terminoAbastecimento": row[5] || "",
-        "produto": row[6] || "",
-        "volume": row[7] || "",
-        "obs": row[8] || "",
-        "assinaturaCliente": row[9] || "",
-        "fotoNota": row[10] || "",
-        "driveFileUrl": row[10] || ""
+        // Mapeamento em camelCase para compatibilidade universal
+        "numero": numVal,
+        "dataAbastecimento": dataVal,
+        "formaPagamento": formaVal,
+        "cliente": cliVal,
+        "horaChegada": chegVal,
+        "inicioAbastecimento": iniVal,
+        "terminoAbastecimento": terVal,
+        "produto": prodVal,
+        "volume": volVal,
+        "obs": obsVal,
+        "assinaturaCliente": assVal,
+        "fotoNota": fotoVal,
+        "driveFileUrl": fotoVal
       };
-    });
+    }).filter(function(item) { return item !== null; });
   } catch (e) {
     return [];
   }
@@ -185,11 +230,11 @@ function lerRegistrosPlanilha() {
 
 export const SCRIPT_CODIGO_GS = `/**
  * ============================================================================
- * SCRIPT 2: PROCESSADOR AUTOMÁTICO GEMINI IA
+ * SCRIPT 2: PROCESSADOR AUTOMÁTICO GEMINI IA (ROBÔ DE LEITURA DAS NOTAS)
  * ============================================================================
  * Função: Varre a pasta do Drive periodicamente via acionador temporal,
- * envia os comprovantes para a API Gemini, grava o resultado na aba "Dados_Raizen"
- * e move os arquivos para a pasta "Processados".
+ * envia os comprovantes para a API Gemini (extraindo Número, Data, Horários, etc.),
+ * grava o resultado na aba "Dados_Raizen" e move os arquivos para "Processados".
  * ============================================================================
  */
 var ABASTECIMENTO_CONFIG = {
@@ -199,7 +244,7 @@ var ABASTECIMENTO_CONFIG = {
 };
 
 // Mantido o modelo de sua preferência
-var GEMINI_MODEL_ABASTECIMENTO = 'gemini-3.6-flash';
+var GEMINI_MODEL_ABASTECIMENTO = 'gemini-2.5-flash';
 
 function processarPastaAbastecimentos() {
   var scriptProperties = PropertiesService.getScriptProperties();
@@ -240,7 +285,7 @@ function processarPastaAbastecimentos() {
         
         Logger.log("Processando arquivo: " + file.getName());
 
-        // Captura a URL ANTES de mover, pois é o dado que vai para a coluna K
+        // Captura a URL ANTES de mover, pois é o link gravado na planilha
         var fileUrl = file.getUrl();
 
         processarUmaNotaAbastecimento(file, apiKey, fileUrl);
@@ -268,20 +313,20 @@ function processarUmaNotaAbastecimento(file, apiKey, fileUrl) {
 
 function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
   var prompt = 'Você está analisando a imagem de uma NOTA DE ABASTECIMENTO de combustível ' +
-    '(comprovante emitido pela Raízen/Shell, usado em abastecimento de veículos/equipamentos em aeroporto). ' +
-    'Leia os campos visíveis e responda EXCLUSIVAMENTE com um JSON válido, sem qualquer marcação markdown ou texto extra, ' +
-    'seguindo exatamente este formato: ' +
+    '(comprovante emitido pela Raízen/Shell, usado em abastecimento de veículos/equipamentos em aeroporto WFS). ' +
+    'Leia os campos visíveis com máxima atenção e responda EXCLUSIVAMENTE com um JSON válido, sem markdown ou texto extra: ' +
     '{' +
-    '  "numero": "string ou null", ' +
-    '  "formaPagamento": "string ou null", ' +
-    '  "cliente": "string ou null", ' +
+    '  "numero": "string ou null (Número da nota ou OS)", ' +
+    '  "dataAbastecimento": "DD/MM/AAAA ou null (Data do abastecimento impressa na nota, ex: 26/08/2026)", ' +
+    '  "formaPagamento": "string ou null (ex: CONTRATO, FATURADO, A VISTA)", ' +
+    '  "cliente": "string ou null (Razão social / Nome da empresa cliente)", ' +
     '  "horaChegada": "HH:mm ou null", ' +
     '  "inicioAbastecimento": "HH:mm ou null", ' +
     '  "terminoAbastecimento": "HH:mm ou null", ' +
-    '  "produto": "string ou null", ' +
-    '  "volume": number ou null, ' +
-    '  "obs": "string ou null", ' +
-    '  "assinaturaCliente": "string ou null"' +
+    '  "produto": "string ou null (ex: DIESEL, DIESEL S10, JET A-1)", ' +
+    '  "volume": number ou null (Quantidade em litros abastecida, ex: 60.00), ' +
+    '  "obs": "string ou null (Prefixo, placa ou equipamento)", ' +
+    '  "assinaturaCliente": "string ou null (Nome legível e matrícula de quem assinou)"' +
     '}';
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL_ABASTECIMENTO + ':generateContent?key=' + apiKey;
 
@@ -358,30 +403,66 @@ function salvarAbastecimentoNaPlanilha(dados, fileUrl) {
     }
   }
   var sheet = ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME) || configurarAbaAbastecimentos(ss);
+  
   var volumeTratado = 0;
   if (dados.volume !== null && dados.volume !== undefined) {
     var parsed = parseFloat(dados.volume.toString().replace(',', '.'));
     volumeTratado = isNaN(parsed) ? 0 : parsed;
   }
 
-  // 11 colunas, na MESMA ordem do cabeçalho (A a K)
-  var novaLinha = [
-    dados.numero ? String(dados.numero).trim() : "",                             // A: Número
-    dados.formaPagamento ? String(dados.formaPagamento).trim() : "",             // B: Forma de Pagamento
-    dados.cliente ? String(dados.cliente).trim() : "",                           // C: Cliente
-    dados.horaChegada ? String(dados.horaChegada).trim() : "",                   // D: Hora da Chegada
-    dados.inicioAbastecimento ? String(dados.inicioAbastecimento).trim() : "",   // E: Início do Abastecimento
-    dados.terminoAbastecimento ? String(dados.terminoAbastecimento).trim() : "", // F: Término do Abastecimento
-    dados.produto ? String(dados.produto).trim() : "",                          // G: Produto
-    volumeTratado,                                                               // H: Volume
-    dados.obs ? String(dados.obs).trim() : "",                                  // I: Obs.:
-    dados.assinaturaCliente ? String(dados.assinaturaCliente).trim() : "",      // J: Assinatura do Cliente
-    fileUrl || ""                                                                // K: Foto da Nota (Link Drive)
-  ];
-  sheet.appendRow(novaLinha);
-  var lastRow = sheet.getLastRow();
-  sheet.getRange(lastRow, 8).setNumberFormat("#,##0.00"); // H = Volume
-  sheet.getRange(lastRow, 1, 1, novaLinha.length).setVerticalAlignment("middle");
+  var dataHoje = Utilities.formatDate(new Date(), "GMT-3", "dd/MM/yyyy");
+  var dataTratada = (dados.dataAbastecimento && String(dados.dataAbastecimento).trim().length >= 8) 
+    ? String(dados.dataAbastecimento).trim() 
+    : dataHoje;
+
+  // Verifica o cabeçalho existente para saber se tem a coluna de Data
+  var headerValues = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 11)).getDisplayValues()[0];
+  var temColunaData = headerValues.some(function(h) { 
+    return h.toLowerCase().indexOf("data") !== -1; 
+  });
+
+  var novaLinha;
+  if (temColunaData) {
+    // 12 Colunas Oficiais (A a L) com Data do Abastecimento na Coluna B:
+    novaLinha = [
+      dados.numero ? String(dados.numero).trim() : "",                             // A: Número
+      dataTratada,                                                                 // B: Data do Abastecimento
+      dados.formaPagamento ? String(dados.formaPagamento).trim() : "CONTRATO",     // C: Forma de Pagamento
+      dados.cliente ? String(dados.cliente).trim() : "",                           // D: Cliente
+      dados.horaChegada ? String(dados.horaChegada).trim() : "",                   // E: Hora da Chegada
+      dados.inicioAbastecimento ? String(dados.inicioAbastecimento).trim() : "",   // F: Início do Abastecimento
+      dados.terminoAbastecimento ? String(dados.terminoAbastecimento).trim() : "", // G: Término do Abastecimento
+      dados.produto ? String(dados.produto).trim() : "DIESEL",                     // H: Produto
+      volumeTratado,                                                               // I: Volume
+      dados.obs ? String(dados.obs).trim() : "",                                  // J: Obs.:
+      dados.assinaturaCliente ? String(dados.assinaturaCliente).trim() : "",      // K: Assinatura do Cliente
+      fileUrl || ""                                                                // L: Foto da Nota (Link Drive)
+    ];
+    sheet.appendRow(novaLinha);
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow, 9).setNumberFormat("#,##0.00"); // Coluna I = Volume
+    sheet.getRange(lastRow, 1, 1, novaLinha.length).setVerticalAlignment("middle");
+  } else {
+    // 11 Colunas Legado (A a K)
+    novaLinha = [
+      dados.numero ? String(dados.numero).trim() : "",                             // A: Número
+      dados.formaPagamento ? String(dados.formaPagamento).trim() : "CONTRATO",     // B: Forma de Pagamento
+      dados.cliente ? String(dados.cliente).trim() : "",                           // C: Cliente
+      dados.horaChegada ? String(dados.horaChegada).trim() : "",                   // D: Hora da Chegada
+      dados.inicioAbastecimento ? String(dados.inicioAbastecimento).trim() : "",   // E: Início do Abastecimento
+      dados.terminoAbastecimento ? String(dados.terminoAbastecimento).trim() : "", // F: Término do Abastecimento
+      dados.produto ? String(dados.produto).trim() : "DIESEL",                     // G: Produto
+      volumeTratado,                                                               // H: Volume
+      dados.obs ? String(dados.obs).trim() : "",                                  // I: Obs.:
+      dados.assinaturaCliente ? String(dados.assinaturaCliente).trim() : "",      // J: Assinatura do Cliente
+      fileUrl || ""                                                                // K: Foto da Nota (Link Drive)
+    ];
+    sheet.appendRow(novaLinha);
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow, 8).setNumberFormat("#,##0.00"); // Coluna H = Volume
+    sheet.getRange(lastRow, 1, 1, novaLinha.length).setVerticalAlignment("middle");
+  }
+
   return { sucesso: true, mensagem: "Nota gravada com sucesso!" };
 }
 
@@ -389,7 +470,7 @@ function configurarAbaAbastecimentos(ss) {
   var sheet = ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME);
   if (!sheet) sheet = ss.insertSheet(ABASTECIMENTO_CONFIG.SHEET_NAME);
   var headers = [
-    "Número", "Forma de Pagamento", "Cliente", "Hora da Chegada",
+    "Número", "Data do Abastecimento", "Forma de Pagamento", "Cliente", "Hora da Chegada",
     "Início do Abastecimento", "Término do Abastecimento", "Produto",
     "Volume", "Obs.:", "Assinatura do Cliente", "Foto da Nota"
   ];
