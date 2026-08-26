@@ -26,6 +26,9 @@ interface SettingsTabProps {
 const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
 const DEFAULT_PASSWORD = 'Admin1234';
 
+// URL PADRÃO FALLBACK - Insira a sua URL fixa aqui se desejar
+export const DEFAULT_WEBHOOK_URL = 'https://script.google.com/macros/s/SUA_URL_DO_WEBHOOK_AQUI/exec';
+
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   gasConfig,
   onSaveConfig,
@@ -37,8 +40,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Settings form state
-  const [webhookUrl, setWebhookUrl] = useState(gasConfig.webhookUrl || '');
+  // Settings form state com fallback para DEFAULT_WEBHOOK_URL
+  const [webhookUrl, setWebhookUrl] = useState(
+    gasConfig.webhookUrl || localStorage.getItem('sheets_webhook_url') || DEFAULT_WEBHOOK_URL
+  );
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ sucesso: boolean; mensagem: string } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -55,7 +60,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [passwordChangeMsg, setPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    setWebhookUrl(gasConfig.webhookUrl || '');
+    setWebhookUrl(gasConfig.webhookUrl || localStorage.getItem('sheets_webhook_url') || DEFAULT_WEBHOOK_URL);
   }, [gasConfig]);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -99,7 +104,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         sucesso: false,
         mensagem: `Erro ao testar: ${err.message || 'Falha na conexão'}`,
       });
-    } finally {
+    } fontally {
       setIsTesting(false);
     }
   };
@@ -141,9 +146,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const handleSaveSettings = () => {
+    const finalUrl = webhookUrl.trim();
+    localStorage.setItem('sheets_webhook_url', finalUrl);
     onSaveConfig({
       ...gasConfig,
-      webhookUrl: webhookUrl.trim(),
+      webhookUrl: finalUrl,
     });
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -232,7 +239,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
           <div className="text-center pt-2 border-t border-neutral-100">
             <span className="text-[11px] text-neutral-400">
-              Senha padrão inicial: <code className="bg-neutral-100 px-1.5 py-0.5 rounded text-neutral-700 font-mono">admin</code>
+              Senha padrão inicial: <code className="bg-neutral-100 px-1.5 py-0.5 rounded text-neutral-700 font-mono">Admin1234</code>
             </span>
           </div>
         </div>
