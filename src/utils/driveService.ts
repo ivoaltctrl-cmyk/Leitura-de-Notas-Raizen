@@ -4,7 +4,7 @@ export async function fetchRecordsFromSheet(webhookUrl: string): Promise<{ suces
       throw new Error("URL do Webhook não configurada.");
     }
 
-    // 1. Tenta carregar via JSONP para contornar restrições de CORS do navegador
+    // 1. Tenta carregar via JSONP para contornar restrições de CORS
     const records = await fetchViaJsonp(webhookUrl);
     
     return {
@@ -16,7 +16,7 @@ export async function fetchRecordsFromSheet(webhookUrl: string): Promise<{ suces
   } catch (errorJsonp) {
     console.warn("JSONP falhou, tentando requisição Fetch direta...", errorJsonp);
 
-    // 2. Fallback via Fetch tradicional com redirecionamento ativo
+    // 2. Fallback via Fetch tradicional
     try {
       const response = await fetch(webhookUrl, {
         method: 'GET',
@@ -46,7 +46,76 @@ export async function fetchRecordsFromSheet(webhookUrl: string): Promise<{ suces
 }
 
 /**
- * Auxiliar para requisição JSONP (Bypassa CORS completamente no navegador)
+ * Função para comprimir imagens antes do envio
+ */
+export async function compressImage(base64Data: string, maxWidth = 1200, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = base64Data;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(base64Data);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+      const compressed = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressed);
+    };
+    img.onerror = (err) => reject(err);
+  });
+}
+
+/**
+ * Função para upload de imagem para o Google Drive através do Apps Script
+ */
+export async function uploadImageToGoogleDrive(webhookUrl: string, base64Image: string, fileName?: string) {
+  try {
+    if (!webhookUrl) {
+      throw new Error("URL do Webhook não configurada.");
+    }
+
+    const payload = {
+      action: "upload_image",
+      base64: base64Image,
+      fileName: fileName || `OS_${Date.now()}.jpg`,
+      mimeType: "image/jpeg"
+    };
+
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (error: any) {
+    console.error("Erro no upload para o Drive:", error);
+    return {
+      sucesso: false,
+      mensagem: error.message || "Erro de conexão ao enviar imagem."
+    };
+  }
+}
+
+/**
+ * Auxiliar para requisição JSONP (Bypassa CORS no navegador)
  */
 function fetchViaJsonp(url: string, timeoutMs = 8000): Promise<any[]> {
   return new Promise((resolve, reject) => {
@@ -87,7 +156,7 @@ function fetchViaJsonp(url: string, timeoutMs = 8000): Promise<any[]> {
 }
 
 /**
- * Normaliza os campos brutos retornados do Apps Script para o modelo da tabela
+ * Normaliza os registros brutos da planilha
  */
 function normalizarRegistros(rows: any[]): any[] {
   if (!Array.isArray(rows)) return [];
