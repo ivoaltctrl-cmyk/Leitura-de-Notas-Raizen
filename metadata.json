@@ -1,6 +1,6 @@
 {
   "name": "WFS - Envio de Comprovantes",
-  "description": "Envio direto de fotos de notas e comprovantes de abastecimento para o Google Drive.",
+  "description": "Controle de abastecimento WFS/Raízen com espelhamento da planilha Google Sheets (Dados_Raizen) e envio de comprovantes ao Google Drive.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

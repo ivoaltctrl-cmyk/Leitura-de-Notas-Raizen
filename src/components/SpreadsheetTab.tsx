@@ -108,15 +108,6 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
   // Fetch real data from Google Sheets when user clicks Atualizar
   const handleSyncFromGoogleSheets = async () => {
-    if (!gasConfig.webhookUrl) {
-      setSyncStatus({
-        type: 'info',
-        msg: 'Configure a URL do Webhook do Google Apps Script na guia Configurações (ADM) para sincronizar com a planilha online.',
-      });
-      setTimeout(() => setSyncStatus(null), 6000);
-      return;
-    }
-
     setIsRefreshing(true);
     setSyncStatus(null);
 
@@ -148,17 +139,13 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
       });
     } finally {
       setIsRefreshing(false);
-      setTimeout(() => setSyncStatus(null), 5000);
+      setTimeout(() => setSyncStatus(null), 6000);
     }
   };
 
-  // Sincroniza toda vez que esta aba é aberta (não só quando ainda não há
-  // nenhum registro), para que o usuário sempre veja a versão mais recente
-  // e compartilhada da planilha assim que entra na tela.
+  // Sincroniza sempre que a aba é aberta
   useEffect(() => {
-    if (gasConfig.webhookUrl) {
-      handleSyncFromGoogleSheets();
-    }
+    handleSyncFromGoogleSheets();
   }, [gasConfig.webhookUrl]);
 
   const handleCopyTSV = async () => {

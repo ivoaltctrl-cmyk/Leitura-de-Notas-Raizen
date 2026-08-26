@@ -1,8 +1,11 @@
-/// <reference types="@cloudflare/workers-types" />
-// Cloudflare Pages Function — GET /api/health
-export const onRequestGet: PagesFunction = async () => {
+export const onRequestGet = async () => {
   return new Response(
-    JSON.stringify({ status: 'ok', time: new Date().toISOString() }),
-    { headers: { 'Content-Type': 'application/json' } }
+    JSON.stringify({ status: 'ok', time: new Date().toISOString(), platform: 'cloudflare-pages' }),
+    {
+      headers: {
+        'Content-Type': 'application/json;charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      },
+    }
   );
 };

@@ -6,7 +6,7 @@ import { SettingsTab, DEFAULT_WEBHOOK_URL } from './components/SettingsTab';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { AbastecimentoRecord, GasConfig } from './types';
 import { INITIAL_RECORDS } from './data/sampleReceipts';
-import { fetchRecordsFromSheet } from './utils/driveService';
+import { fetchRecordsFromSheet, fetchGlobalConfig, saveGlobalConfig } from './utils/driveService';
 
 const STORAGE_KEY_RECORDS = 'abastecimento_records_v1';
 const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
@@ -66,15 +66,31 @@ export default function App() {
 
   const [previewRecord, setPreviewRecord] = useState<AbastecimentoRecord | null>(null);
 
+  // Load shared server configuration on startup (ensures all PCs, mobile devices, and incognito sessions share the webhook URL)
   useEffect(() => {
-    if (!gasConfig.webhookUrl) return;
+    fetchGlobalConfig().then((serverConfig) => {
+      if (serverConfig && serverConfig.webhookUrl) {
+        setGasConfig((prev) => ({
+          ...prev,
+          webhookUrl: serverConfig.webhookUrl || prev.webhookUrl,
+          autoUploadToDrive: serverConfig.autoUploadToDrive ?? prev.autoUploadToDrive,
+        }));
+        try {
+          localStorage.setItem('sheets_webhook_url', serverConfig.webhookUrl);
+        } catch {}
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!gasConfig.webhookUrl || gasConfig.webhookUrl === DEFAULT_WEBHOOK_URL) return;
 
     let cancelled = false;
 
     const syncFromServer = async () => {
       try {
         const result = await fetchRecordsFromSheet(gasConfig.webhookUrl);
-        if (!cancelled && result.sucesso && Array.isArray(result.records)) {
+        if (!cancelled && result.sucesso && Array.isArray(result.records) && result.records.length > 0) {
           setRecords(result.records);
         }
       } catch (e) {
@@ -107,6 +123,8 @@ export default function App() {
     } catch (e) {
       console.error('Erro ao salvar config no localStorage:', e);
     }
+    // Save to server so other PCs/browsers get it automatically
+    saveGlobalConfig(newConfig);
   };
 
   const handleAddRecord = (newRecord: AbastecimentoRecord) => {

@@ -24,6 +24,7 @@ export interface AbastecimentoRecord {
 
 export interface GasConfig {
   webhookUrl: string;
+  sheetUrl?: string;
   folderId?: string;
   autoUploadToDrive: boolean;
 }
