@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { UploadReceiptTab } from './components/UploadReceiptTab';
 import { SpreadsheetTab } from './components/SpreadsheetTab';
-import { SettingsTab } from './components/SettingsTab';
+import { SettingsTab, DEFAULT_WEBHOOK_URL } from './components/SettingsTab';
 import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { AbastecimentoRecord, GasConfig } from './types';
 import { INITIAL_RECORDS } from './data/sampleReceipts';
@@ -14,9 +14,6 @@ const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'upload' | 'spreadsheet' | 'settings'>('upload');
 
-  // O localStorage aqui funciona só como CACHE local, para exibir algo
-  // instantaneamente enquanto a sincronização com a planilha não termina.
-  // A fonte de verdade real é sempre a planilha Google Sheets (Dados_Raizen).
   const [records, setRecords] = useState<AbastecimentoRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_RECORDS);
@@ -32,27 +29,43 @@ export default function App() {
     return INITIAL_RECORDS;
   });
 
+  // Ajuste no estado inicial do gasConfig:
   const [gasConfig, setGasConfig] = useState<GasConfig>(() => {
+    // 1. Prioridade: chave direta salva pelas configurações
+    const directUrl = localStorage.getItem('sheets_webhook_url');
+    
+    // 2. Segunda opção: objeto salvo anteriormente
+    let savedObjectUrl = '';
+    let autoUpload = true;
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') return parsed;
+        if (parsed && typeof parsed === 'object') {
+          savedObjectUrl = parsed.webhookUrl || '';
+          if (typeof parsed.autoUploadToDrive === 'boolean') {
+            autoUpload = parsed.autoUploadToDrive;
+          }
+        }
       }
     } catch (e) {
       console.error('Erro ao ler config do localStorage:', e);
     }
+
+    // 3. Terceira opção: Variável de ambiente
+    const envUrl = (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL;
+
+    // Resolução da URL com Fallback para a DEFAULT_WEBHOOK_URL
+    const resolvedUrl = directUrl || savedObjectUrl || envUrl || DEFAULT_WEBHOOK_URL;
+
     return {
-      webhookUrl: (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL || '',
-      autoUploadToDrive: true,
+      webhookUrl: resolvedUrl,
+      autoUploadToDrive: autoUpload,
     };
   });
 
   const [previewRecord, setPreviewRecord] = useState<AbastecimentoRecord | null>(null);
 
-  // Sincroniza com a planilha (fonte única e compartilhada por todos os usuários)
-  // assim que o app abre, e depois a cada 30 segundos. Isso garante que todo
-  // mundo veja o mesmo controle online, e não apenas o que foi feito naquele aparelho.
   useEffect(() => {
     if (!gasConfig.webhookUrl) return;
 
@@ -70,7 +83,7 @@ export default function App() {
     };
 
     syncFromServer();
-    const intervalId = setInterval(syncFromServer, 30000); // a cada 30s
+    const intervalId = setInterval(syncFromServer, 30000);
 
     return () => {
       cancelled = true;
@@ -78,7 +91,6 @@ export default function App() {
     };
   }, [gasConfig.webhookUrl]);
 
-  // Sync records to localStorage (agora só como cache local, não como fonte)
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records));
@@ -87,11 +99,11 @@ export default function App() {
     }
   }, [records]);
 
-  // Sync gasConfig to localStorage
   const handleSaveGasConfig = (newConfig: GasConfig) => {
     setGasConfig(newConfig);
     try {
       localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(newConfig));
+      localStorage.setItem('sheets_webhook_url', newConfig.webhookUrl);
     } catch (e) {
       console.error('Erro ao salvar config no localStorage:', e);
     }
@@ -107,14 +119,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-100/70 text-neutral-900 flex flex-col font-sans antialiased selection:bg-red-500 selection:text-white">
-      {/* Top Navigation */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         recordCount={records.length}
       />
 
-      {/* Main Container - Full-width optimized without horizontal scrollbar */}
       <main className="flex-1 w-full max-w-[1750px] mx-auto px-2.5 sm:px-4 lg:px-6 py-4">
         {activeTab === 'upload' && (
           <UploadReceiptTab
@@ -143,7 +153,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Receipt Image Preview Modal */}
       <ReceiptPreviewModal record={previewRecord} onClose={() => setPreviewRecord(null)} />
     </div>
   );
