@@ -689,10 +689,14 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
     }
 
     console.log(`[Fetch Sheets] Consultando Google Apps Script Web App: ${targetWebhook.slice(0, 50)}...`);
+    const { secretToken } = req.body;
 
     // 1. Try GET request first (Standard Google Apps Script doGet)
     try {
-      const getUrl = targetWebhook.includes('?') ? `${targetWebhook}&action=get_sheet_data` : `${targetWebhook}?action=get_sheet_data`;
+      const tokenParam = secretToken ? `&token=${encodeURIComponent(secretToken.trim())}` : '';
+      const getUrl = targetWebhook.includes('?') 
+        ? `${targetWebhook}&action=get_sheet_data${tokenParam}` 
+        : `${targetWebhook}?action=get_sheet_data${tokenParam}`;
       const gasResponse = await fetch(getUrl, {
         method: 'GET',
         headers: { Accept: 'application/json, text/plain' },

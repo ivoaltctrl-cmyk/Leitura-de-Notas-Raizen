@@ -5,12 +5,29 @@
  */
 
 export const SCRIPT_WEBHOOK_GS = `/**
- * WFS / RAÍZEN - SCRIPT 3 (HÍBRIDO REVALIDADO COM SUPORTE A JSONP E CORS)
- * Baseado 100% no Script 1 funcional + Leitura dinâmica de cabeçalhos (incluindo Data) + JSONP/CORS
+ * WFS / RAÍZEN - SCRIPT 3 (HÍBRIDO REVALIDADO COM SUPORTE A TOKEN DE SEGURANÇA, JSONP E CORS)
+ * Baseado 100% no Script 1 funcional + Leitura de cabeçalhos (incluindo Data) + Validação de Token Opcional
  */
 
 var NOME_ABA = "Dados_Raizen";
 var FOLDER_ID = "1n2_zU5-2DG7tih314twOcf6lRSXZeFkc";
+
+// Token secreto de segurança (opcional, pode ser configurado aqui ou em Propriedades do Script como SECRET_TOKEN)
+var WEBHOOK_SECRET_TOKEN = "";
+
+function validarAcessoToken(e, postData) {
+  var expectedToken = WEBHOOK_SECRET_TOKEN || PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN') || "";
+  if (!expectedToken) return true; // Se não houver token configurado, permite livre acesso compatível
+  
+  var receivedToken = "";
+  if (e && e.parameter && e.parameter.token) {
+    receivedToken = e.parameter.token;
+  } else if (postData && postData.token) {
+    receivedToken = postData.token;
+  }
+  
+  return receivedToken === expectedToken;
+}
 
 /**
  * Endpoint GET: Permite que o React leia a planilha diretamente ao carregar
@@ -18,6 +35,17 @@ var FOLDER_ID = "1n2_zU5-2DG7tih314twOcf6lRSXZeFkc";
  */
 function doGet(e) {
   var callback = (e && e.parameter && (e.parameter.callback || e.parameter.prefix)) ? (e.parameter.callback || e.parameter.prefix) : null;
+  
+  if (!validarAcessoToken(e, null)) {
+    var authErr = { sucesso: false, mensagem: "Acesso não autorizado: Token de segurança inválido." };
+    var authErrJson = JSON.stringify(authErr);
+    if (callback) {
+      return ContentService.createTextOutput(callback + '(' + authErrJson + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(authErrJson).setMimeType(ContentService.MimeType.JSON);
+  }
+
   try {
     var records = lerRegistrosPlanilha();
     var responseData = {
@@ -66,6 +94,11 @@ function doPost(e) {
       throw new Error("Nenhum dado recebido na requisição POST.");
     }
     var data = JSON.parse(e.postData.contents);
+
+    // Validação de Token de Segurança (se configurado)
+    if (!validarAcessoToken(e, data)) {
+      throw new Error("Acesso não autorizado: Token de segurança inválido ou ausente.");
+    }
 
     // 1. Teste de Conexão (Ping)
     if (data.action === 'ping_test' || data.action === 'test') {

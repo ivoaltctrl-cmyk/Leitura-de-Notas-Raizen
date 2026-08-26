@@ -42,7 +42,17 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
   const [selectedPayment, setSelectedPayment] = useState<string>('TODOS');
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [syncStatus, setSyncStatus] = useState<{ type: 'success' | 'error' | 'info'; msg: string } | null>(null);
+
+  // Cooldown timer interval for anti-spam protection
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
 
   // Available unique products and payment methods for filters
   const uniqueProducts = useMemo(() => {
@@ -109,12 +119,14 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
   }, [filteredRecords]);
 
   // Fetch real data from Google Sheets when user clicks Atualizar
-  const handleSyncFromGoogleSheets = async () => {
+  const handleSyncFromGoogleSheets = async (isManualClick: boolean = false) => {
+    if (isRefreshing || (isManualClick && cooldownSeconds > 0)) return;
+
     setIsRefreshing(true);
     setSyncStatus(null);
 
     try {
-      const result = await fetchRecordsFromSheet(gasConfig.webhookUrl);
+      const result = await fetchRecordsFromSheet(gasConfig.webhookUrl, gasConfig.sheetUrl, gasConfig.secretToken);
       if (result.sucesso && Array.isArray(result.records)) {
         // ALWAYS update the state and localStorage with the real sheet state
         onSetRecords(result.records);
@@ -143,14 +155,17 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
       });
     } finally {
       setIsRefreshing(false);
+      if (isManualClick) {
+        setCooldownSeconds(6); // 6 segundos de cooldown anti-clique excessivo
+      }
       setTimeout(() => setSyncStatus(null), 6000);
     }
   };
 
   // Sincroniza sempre que a aba é aberta
   useEffect(() => {
-    handleSyncFromGoogleSheets();
-  }, [gasConfig.webhookUrl]);
+    handleSyncFromGoogleSheets(false);
+  }, [gasConfig.webhookUrl, gasConfig.secretToken]);
 
   const handleCopyTSV = async () => {
     const ok = await copyTableAsTSV(filteredRecords);
@@ -192,17 +207,23 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
           {/* Action Tools */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Primary Sincronizar / Atualizar Button */}
+            {/* Primary Sincronizar / Atualizar Button com Proteção Anti-Spam */}
             <button
               type="button"
               id="btn-atualizar-sheets"
-              onClick={handleSyncFromGoogleSheets}
-              disabled={isRefreshing}
-              className="px-3.5 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:bg-neutral-400 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              onClick={() => handleSyncFromGoogleSheets(true)}
+              disabled={isRefreshing || cooldownSeconds > 0}
+              className="px-3.5 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:bg-neutral-300 disabled:text-neutral-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
               title="Buscar dados atualizados diretamente da planilha Google Sheets"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span>{isRefreshing ? 'Sincronizando Sheets...' : 'Atualizar Planilha'}</span>
+              <span>
+                {isRefreshing 
+                  ? 'Sincronizando...' 
+                  : cooldownSeconds > 0 
+                  ? `Aguarde (${cooldownSeconds}s)` 
+                  : 'Atualizar Planilha'}
+              </span>
             </button>
 
             <button

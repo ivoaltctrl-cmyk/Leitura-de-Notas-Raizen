@@ -13,6 +13,7 @@ import {
   LogOut,
   Code,
   FileSpreadsheet,
+  Trash2,
 } from 'lucide-react';
 import { GasConfig } from '../types';
 import { testGoogleIntegration, fetchRecordsFromSheet } from '../utils/driveService';
@@ -44,6 +45,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [webhookUrl, setWebhookUrl] = useState(
     gasConfig.webhookUrl || localStorage.getItem('sheets_webhook_url') || DEFAULT_WEBHOOK_URL
   );
+  const [secretToken, setSecretToken] = useState(
+    gasConfig.secretToken || localStorage.getItem('sheets_secret_token') || ''
+  );
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ sucesso: boolean; mensagem: string } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -60,8 +64,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordChangeMsg, setPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Cache clear state
+  const [cacheClearedMsg, setCacheClearedMsg] = useState<string | null>(null);
+
   useEffect(() => {
     setWebhookUrl(gasConfig.webhookUrl || localStorage.getItem('sheets_webhook_url') || DEFAULT_WEBHOOK_URL);
+    setSecretToken(gasConfig.secretToken || localStorage.getItem('sheets_secret_token') || '');
   }, [gasConfig]);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -85,6 +93,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setPasswordInput('');
   };
 
+  const handleClearLocalCache = () => {
+    try {
+      localStorage.removeItem('abastecimento_records_cache_v3');
+      localStorage.removeItem('abastecimento_records_cache_v2');
+      localStorage.removeItem('abastecimento_records_cache_v1');
+      setCacheClearedMsg('Cache de registros limpo com sucesso! Recarregando dados...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch (err: any) {
+      setCacheClearedMsg(`Erro ao limpar cache: ${err.message}`);
+    }
+  };
+
   const handleTestConnection = async () => {
     if (!webhookUrl.trim()) {
       setTestResult({
@@ -98,7 +120,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setTestResult(null);
 
     try {
-      const result = await testGoogleIntegration(webhookUrl.trim());
+      const result = await testGoogleIntegration(webhookUrl.trim(), secretToken.trim());
       setTestResult(result);
     } catch (err: any) {
       setTestResult({
@@ -123,7 +145,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setSheetReadResult(null);
 
     try {
-      const result = await fetchRecordsFromSheet(webhookUrl.trim());
+      const result = await fetchRecordsFromSheet(webhookUrl.trim(), undefined, secretToken.trim());
       if (result.sucesso) {
         setSheetReadResult({
           sucesso: true,
@@ -148,10 +170,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const handleSaveSettings = () => {
     const finalUrl = webhookUrl.trim();
+    const finalToken = secretToken.trim();
     localStorage.setItem('sheets_webhook_url', finalUrl);
+    localStorage.setItem('sheets_secret_token', finalToken);
     onSaveConfig({
       ...gasConfig,
       webhookUrl: finalUrl,
+      secretToken: finalToken,
     });
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -405,6 +430,24 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </p>
         </div>
 
+        {/* Secret Token Field (Optional) */}
+        <div className="space-y-2 pt-2 border-t border-neutral-100">
+          <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-blue-600" />
+            <span>Token Secreto do Webhook (Opcional - Segurança de Produção)</span>
+          </label>
+          <input
+            type="password"
+            value={secretToken}
+            onChange={(e) => setSecretToken(e.target.value)}
+            placeholder="Ex: RAÍZEN_PROD_SECURE_TOKEN_2026 (deixe em branco se não configurou token no script)"
+            className="w-full px-3.5 py-2.5 text-xs sm:text-sm font-mono rounded-xl border border-neutral-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-hidden bg-neutral-50/50"
+          />
+          <p className="text-[11px] text-neutral-500">
+            Se preenchido, todas as requisições enviarão este token de autorização. No Google Apps Script, defina a variável <code className="font-mono bg-neutral-100 px-1 py-0.5 rounded text-neutral-800">WEBHOOK_SECRET_TOKEN</code> ou adicione em Propriedades do Script como <code className="font-mono bg-neutral-100 px-1 py-0.5 rounded text-neutral-800">SECRET_TOKEN</code>.
+          </p>
+        </div>
+
         {/* Test Connection Status Banner */}
         {testResult && (
           <div
@@ -469,6 +512,50 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             Salvar Alterações
           </button>
         </div>
+      </div>
+
+      {/* Local Storage & Cache Management Card */}
+      <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs p-6 space-y-4">
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3.5">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-lg bg-neutral-100 text-neutral-700 flex items-center justify-center font-bold">
+              <Trash2 className="w-4 h-4 text-neutral-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-neutral-900">Limpeza de Cache Local do Navegador</h3>
+              <p className="text-xs text-neutral-500">
+                Limpa os dados temporários em cache neste dispositivo sem apagar as fotos do Google Drive nem a planilha online.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-neutral-50 p-4 rounded-xl border border-neutral-200">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-neutral-800">
+              Precisa resetar os dados salvos em cache neste aparelho?
+            </p>
+            <p className="text-[11px] text-neutral-500">
+              Útil caso queira forçar uma re-sincronização do zero diretamente do Google Sheets.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleClearLocalCache}
+            className="px-4 py-2 bg-neutral-800 hover:bg-red-600 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 shadow-xs"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Limpar Cache Local</span>
+          </button>
+        </div>
+
+        {cacheClearedMsg && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold text-emerald-800 flex items-center gap-2 animate-fadeIn">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{cacheClearedMsg}</span>
+          </div>
+        )}
       </div>
 
       {/* Script Source Code & Installation Guide */}

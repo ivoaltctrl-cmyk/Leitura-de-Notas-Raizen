@@ -33,7 +33,7 @@ export const DEFAULT_WEBHOOK_URL =
  * Helper to fetch global configuration stored on the server
  * (Shared across all PCs, mobile devices, and incognito sessions)
  */
-export async function fetchGlobalConfig(): Promise<{ webhookUrl: string; autoUploadToDrive: boolean; sheetUrl?: string } | null> {
+export async function fetchGlobalConfig(): Promise<{ webhookUrl: string; autoUploadToDrive: boolean; sheetUrl?: string; secretToken?: string } | null> {
   try {
     const res = await fetch('/api/config', {
       method: 'GET',
@@ -54,7 +54,7 @@ export async function fetchGlobalConfig(): Promise<{ webhookUrl: string; autoUpl
 /**
  * Helper to save global configuration to the server
  */
-export async function saveGlobalConfig(config: { webhookUrl: string; autoUploadToDrive?: boolean; sheetUrl?: string }): Promise<boolean> {
+export async function saveGlobalConfig(config: { webhookUrl: string; autoUploadToDrive?: boolean; sheetUrl?: string; secretToken?: string }): Promise<boolean> {
   try {
     const res = await fetch('/api/config', {
       method: 'POST',
@@ -127,18 +127,23 @@ export async function uploadImageToGoogleDrive(
   webhookUrl: string,
   base64DataUrl: string,
   fileName: string,
-  mimeType: string = 'image/jpeg'
+  mimeType: string = 'image/jpeg',
+  secretToken?: string
 ): Promise<UploadDriveResult> {
   const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
   const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
 
-  const payload = {
+  const payload: any = {
     action: 'upload',
     base64: cleanBase64,
     mimeType: mimeType || 'image/jpeg',
     fileName: fileName || `NOTA_${Date.now()}.jpg`,
     timestamp: new Date().toISOString(),
   };
+
+  if (secretToken && secretToken.trim()) {
+    payload.token = secretToken.trim();
+  }
 
   if (!targetUrl) {
     return {
@@ -204,7 +209,7 @@ export async function uploadImageToGoogleDrive(
 /**
  * Fetches real records directly from the Google Sheets spreadsheet via Google Apps Script Web App or direct sheet URL
  */
-export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: string): Promise<FetchSheetRecordsResult> {
+export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: string, secretToken?: string): Promise<FetchSheetRecordsResult> {
   const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
   const targetSheet = sheetUrl?.trim() || '';
 
@@ -239,7 +244,7 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache, no-store',
       },
-      body: JSON.stringify({ webhookUrl: targetUrl, sheetUrl: targetSheet }),
+      body: JSON.stringify({ webhookUrl: targetUrl, sheetUrl: targetSheet, secretToken: secretToken?.trim() }),
     });
 
     if (res.ok) {
@@ -263,7 +268,8 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
   // 2. Fallback via JSONP (Bypasses browser CORS completely across different PCs, cellphones, incognito tabs)
   if (targetUrl && !targetUrl.includes('docs.google.com/spreadsheets')) {
     try {
-      const jsonpData = await fetchWithJsonp(targetUrl, 7000);
+      const tokenParam = secretToken ? `&token=${encodeURIComponent(secretToken.trim())}` : '';
+      const jsonpData = await fetchWithJsonp(`${targetUrl}${tokenParam}`, 7000);
       const recList = jsonpData?.records || jsonpData?.dados || (Array.isArray(jsonpData) ? jsonpData : null);
       if (recList && Array.isArray(recList)) {
         const normalized = normalizeRecords(recList);
@@ -284,9 +290,10 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
   // 3. Fallback direct browser GET if webhook is available
   if (targetUrl) {
     try {
+      const tokenParam = secretToken ? `&token=${encodeURIComponent(secretToken.trim())}` : '';
       const getUrl = targetUrl.includes('?') 
-        ? `${targetUrl}&action=get_sheet_data&_t=${Date.now()}` 
-        : `${targetUrl}?action=get_sheet_data&_t=${Date.now()}`;
+        ? `${targetUrl}&action=get_sheet_data&_t=${Date.now()}${tokenParam}` 
+        : `${targetUrl}?action=get_sheet_data&_t=${Date.now()}${tokenParam}`;
       const directRes = await fetch(getUrl, {
         method: 'GET',
         headers: { 
@@ -332,7 +339,8 @@ export async function processReceiptPipeline(
   fileName: string,
   mimeType: string = 'image/jpeg',
   webhookUrl?: string,
-  manualData?: Partial<AbastecimentoRecord>
+  manualData?: Partial<AbastecimentoRecord>,
+  secretToken?: string
 ): Promise<ProcessReceiptFlowResult> {
   const targetWebhookUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
   const cleanBase64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -349,6 +357,7 @@ export async function processReceiptPipeline(
         fileName: fileName,
         webhookUrl: targetWebhookUrl,
         manualData: manualData,
+        secretToken: secretToken?.trim(),
       }),
     });
 
@@ -381,7 +390,7 @@ export async function processReceiptPipeline(
 /**
  * Tests connection with Google Apps Script Webhook (Google Drive / Sheets)
  */
-export async function testGoogleIntegration(webhookUrl: string): Promise<{ sucesso: boolean; mensagem: string }> {
+export async function testGoogleIntegration(webhookUrl: string, secretToken?: string): Promise<{ sucesso: boolean; mensagem: string }> {
   if (!webhookUrl || !webhookUrl.trim()) {
     return {
       sucesso: false,
@@ -396,7 +405,7 @@ export async function testGoogleIntegration(webhookUrl: string): Promise<{ suces
     const response = await fetch('/api/test-google-integration', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhookUrl: cleanUrl }),
+      body: JSON.stringify({ webhookUrl: cleanUrl, secretToken: secretToken?.trim() }),
     });
 
     const text = await response.text();
@@ -422,10 +431,13 @@ export async function testGoogleIntegration(webhookUrl: string): Promise<{ suces
 
   // 2. Direct browser fallback test
   try {
+    const payload: any = { action: 'ping_test' };
+    if (secretToken && secretToken.trim()) payload.token = secretToken.trim();
+
     await fetch(cleanUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'ping_test' }),
+      body: JSON.stringify(payload),
       mode: 'no-cors',
     });
 
@@ -442,12 +454,13 @@ export async function testGoogleIntegration(webhookUrl: string): Promise<{ suces
 }
 
 /**
- * Resizes and compresses image if too huge, ensuring ultra-fast upload from mobile networks
+ * Resizes and compresses image efficiently (1600px max, 0.82 quality)
+ * Ensures ultra-fast upload from mobile/Wi-Fi with 100% OCR sharpness
  */
 export async function compressImage(
   file: File,
-  maxDimension: number = 2000,
-  quality: number = 0.85
+  maxDimension: number = 1600,
+  quality: number = 0.82
 ): Promise<{ base64: string; dataUrl: string; mimeType: string }> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -475,6 +488,9 @@ export async function compressImage(
         const ctx = canvas.getContext('2d');
 
         if (ctx) {
+          // Clean background fill before drawing to avoid alpha artifacting
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
           const dataUrl = canvas.toDataURL('image/jpeg', quality);
           const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');

@@ -88,16 +88,30 @@ export const LargeCameraModal: React.FC<LargeCameraModalProps> = ({
     if (!videoRef.current) return;
     const video = videoRef.current;
 
+    let width = video.videoWidth || 1600;
+    let height = video.videoHeight || 1200;
+    const maxDim = 1600;
+
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+    }
+
     const canvas = document.createElement('canvas');
-    const width = video.videoWidth || 1920;
-    const height = video.videoHeight || 1080;
     canvas.width = width;
     canvas.height = height;
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, height);
       ctx.drawImage(video, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
       const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
 
       const now = new Date();

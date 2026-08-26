@@ -33,9 +33,11 @@ export default function App() {
   const [gasConfig, setGasConfig] = useState<GasConfig>(() => {
     // 1. Prioridade: chave direta salva pelas configurações
     const directUrl = localStorage.getItem('sheets_webhook_url');
+    const directToken = localStorage.getItem('sheets_secret_token') || '';
     
     // 2. Segunda opção: objeto salvo anteriormente
     let savedObjectUrl = '';
+    let savedSecretToken = '';
     let autoUpload = true;
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
@@ -43,6 +45,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
           savedObjectUrl = parsed.webhookUrl || '';
+          savedSecretToken = parsed.secretToken || '';
           if (typeof parsed.autoUploadToDrive === 'boolean') {
             autoUpload = parsed.autoUploadToDrive;
           }
@@ -57,9 +60,11 @@ export default function App() {
 
     // Resolução da URL com Fallback para a DEFAULT_WEBHOOK_URL
     const resolvedUrl = directUrl || savedObjectUrl || envUrl || DEFAULT_WEBHOOK_URL;
+    const resolvedToken = directToken || savedSecretToken || '';
 
     return {
       webhookUrl: resolvedUrl,
+      secretToken: resolvedToken,
       autoUploadToDrive: autoUpload,
     };
   });
@@ -73,6 +78,7 @@ export default function App() {
         setGasConfig((prev) => ({
           ...prev,
           webhookUrl: serverConfig.webhookUrl || prev.webhookUrl,
+          secretToken: serverConfig.secretToken ?? prev.secretToken,
           autoUploadToDrive: serverConfig.autoUploadToDrive ?? prev.autoUploadToDrive,
         }));
         try {
@@ -90,7 +96,7 @@ export default function App() {
       if (!urlToUse) return;
 
       try {
-        const result = await fetchRecordsFromSheet(urlToUse);
+        const result = await fetchRecordsFromSheet(urlToUse, undefined, gasConfig.secretToken);
         if (!cancelled && result.sucesso && Array.isArray(result.records)) {
           setRecords(result.records);
         }

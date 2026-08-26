@@ -111,7 +111,8 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
         gasConfig.webhookUrl,
         selectedImage.dataUrl,
         selectedImage.fileName,
-        selectedImage.mimeType
+        selectedImage.mimeType,
+        gasConfig.secretToken
       );
 
       if (result.sucesso) {
