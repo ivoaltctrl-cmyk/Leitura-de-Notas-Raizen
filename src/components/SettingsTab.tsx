@@ -26,8 +26,8 @@ interface SettingsTabProps {
 const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
 const DEFAULT_PASSWORD = 'Admin1234';
 
-// URL PADRÃO FALLBACK - Webhook padrão do Google Apps Script
-export const DEFAULT_WEBHOOK_URL = '';
+// URL PADRÃO OFICIAL - Webhook padrão de produção do Google Apps Script
+export const DEFAULT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec';
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   gasConfig,

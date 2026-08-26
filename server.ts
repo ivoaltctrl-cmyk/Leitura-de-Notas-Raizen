@@ -36,7 +36,10 @@ interface AppConfig {
 }
 
 let cachedConfig: AppConfig = {
-  webhookUrl: process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL || '',
+  webhookUrl:
+    process.env.GOOGLE_APPS_SCRIPT_URL ||
+    process.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
+    'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec',
   autoUploadToDrive: true,
   sheetUrl: '',
 };

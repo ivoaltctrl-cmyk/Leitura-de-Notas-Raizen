@@ -24,10 +24,10 @@ export interface FetchSheetRecordsResult {
   total: number;
 }
 
-// Default Webhook URL for Google Apps Script if not set via environment variable
+// Official Production Webhook URL for Google Apps Script
 export const DEFAULT_WEBHOOK_URL =
   (import.meta as any).env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
-  '';
+  'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec';
 
 /**
  * Helper to fetch global configuration stored on the server
