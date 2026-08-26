@@ -24,7 +24,7 @@ interface SettingsTabProps {
 }
 
 const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
-const DEFAULT_PASSWORD = 'admin';
+const DEFAULT_PASSWORD = 'Admin1234';
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   gasConfig,
