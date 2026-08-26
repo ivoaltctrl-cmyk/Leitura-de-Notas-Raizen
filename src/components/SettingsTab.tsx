@@ -104,7 +104,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         sucesso: false,
         mensagem: `Erro ao testar: ${err.message || 'Falha na conexão'}`,
       });
-    } fontally {
+    } finally {
       setIsTesting(false);
     }
   };
