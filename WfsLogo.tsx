@@ -1,56 +1,74 @@
 import React from 'react';
+import { BrandConfig } from '../types/index.ts';
+import { Palette } from 'lucide-react';
 
 interface WfsLogoProps {
   className?: string;
-  variant?: 'red' | 'white';
+  size?: 'sm' | 'md' | 'lg';
+  showSubtitle?: boolean;
+  brand?: BrandConfig;
+  onClickCustomize?: () => void;
 }
 
-export const WfsLogo: React.FC<WfsLogoProps> = ({ className = 'h-8 w-auto', variant = 'red' }) => {
-  const color = variant === 'white' ? '#FFFFFF' : '#E31B23';
+export const WfsLogo: React.FC<WfsLogoProps> = ({
+  className = '',
+  size = 'md',
+  showSubtitle = true,
+  brand,
+  onClickCustomize,
+}) => {
+  const badgeText = brand?.badgeText || 'SST & CONFORMIDADE';
+  const customLogoUrl = brand?.customLogoUrl;
+  const logoType = brand?.logoType || 'styled_wfs';
+
+  const dimensions = {
+    sm: 'h-8 sm:h-9',
+    md: 'h-10 sm:h-11',
+    lg: 'h-13 sm:h-14',
+  };
 
   return (
-    <div className={`inline-flex flex-col justify-center select-none ${className}`}>
-      <svg
-        viewBox="0 0 310 135"
-        className="h-full w-auto"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        {/* Text "wfs" in bold red typography */}
-        <g fill={color}>
-          {/* Lowercase 'w' */}
-          <path
-            d="M16 26 L38 90 L60 26 L82 26 L104 90 L126 26 L150 26 L120 110 L96 110 L74 51 L52 110 L28 110 L0 26 Z"
+    <div
+      onClick={onClickCustomize}
+      className={`group flex items-center gap-3 select-none ${
+        onClickCustomize ? 'cursor-pointer' : ''
+      } ${className}`}
+      title={onClickCustomize ? 'Clique para personalizar identidade, logotipo e paleta' : undefined}
+    >
+      {/* 1. Custom Image if user uploaded their own in Brand Settings */}
+      {logoType === 'custom_image' && customLogoUrl ? (
+        <div className={`relative ${dimensions[size]} flex items-center justify-center shrink-0`}>
+          <img
+            src={customLogoUrl}
+            alt="Logo"
+            className="h-full w-auto object-contain max-h-12"
           />
+        </div>
+      ) : (
+        /* 2. Official WFS Brand Logo (Uploaded by User) */
+        <div className={`relative ${dimensions[size]} flex items-center justify-center shrink-0`}>
+          <img
+            src="/wfs-logo.svg"
+            alt="WFS - A SATS COMPANY"
+            className="h-full w-auto object-contain max-h-12 drop-shadow-2xs"
+          />
+        </div>
+      )}
 
-          {/* Lowercase 'f' */}
-          <path
-            d="M164 42 L164 26 L186 26 L186 42 L208 42 L208 60 L186 60 L186 110 L164 110 L164 60 L150 60 L150 42 Z"
-          />
-          {/* Top curve of 'f' */}
-          <path
-            d="M186 26 C186 12 196 2 212 2 L222 2 L222 20 L212 20 C206 20 202 23 202 30 L202 42 L186 42 Z"
-          />
-
-          {/* Lowercase 's' */}
-          <path
-            d="M252 26 C271 26 283 36 285 50 L263 54 C261 46 255 43 249 43 C241 43 235 46 235 53 C235 60 242 63 255 68 C275 75 286 83 286 97 C286 112 271 120 251 120 C231 120 217 110 215 94 L237 89 C238 98 245 102 252 102 C261 102 267 97 267 91 C267 83 259 79 245 74 C227 67 216 60 216 46 C216 33 231 26 252 26 Z"
-          />
-        </g>
-
-        {/* Subtext "A SATS COMPANY" */}
-        <text
-          x="4"
-          y="132"
-          fill={color}
-          fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-          fontWeight="800"
-          fontSize="22"
-          letterSpacing="4.2"
-        >
-          A SATS COMPANY
-        </text>
-      </svg>
+      {/* Compliance / SST Badge Tag */}
+      {badgeText && (
+        <div className="flex items-center gap-1.5 pl-1">
+          <span className="hidden sm:inline-block h-6 w-px bg-slate-200" />
+          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-[#E21B23]/10 text-[#E21B23] border border-[#E21B23]/25 tracking-wider">
+            {badgeText}
+          </span>
+          {onClickCustomize && (
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-slate-700">
+              <Palette className="w-3.5 h-3.5" />
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 };

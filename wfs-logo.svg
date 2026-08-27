@@ -1,25 +1,38 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 140" width="100%" height="100%">
-  <!-- "wfs" Bold Lowercase Typography Only -->
-  <g fill="#E31B23">
-    <!-- w -->
-    <path d="M18,30 L40,94 L62,30 L84,30 L106,94 L128,30 L152,30 L122,114 L98,114 L76,55 L54,114 L30,114 L0,30 Z" />
-    
-    <!-- f -->
-    <path d="M166,46 L166,30 L188,30 L188,46 L210,46 L210,64 L188,64 L188,114 L166,114 L166,64 L152,64 L152,46 Z" />
-    <path d="M188,30 C188,16 198,6 214,6 L224,6 L224,24 L214,24 C208,24 204,27 204,34 L204,46 L188,46 Z" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" width="100%" height="100%">
+  <defs>
+    <style>
+      .wfs-red { fill: #E21B23; }
+      .wfs-sub {
+        font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+        font-weight: 800;
+        font-size: 34px;
+        letter-spacing: 0.12em;
+        fill: #E21B23;
+      }
+      .wfs-wordmark {
+        font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+        font-weight: 900;
+        font-size: 195px;
+        fill: #E21B23;
+      }
+    </style>
+  </defs>
 
-    <!-- s -->
-    <path d="M255,30 C274,30 286,40 288,54 L266,58 C264,50 258,47 252,47 C244,47 238,50 238,57 C238,64 245,67 258,72 C278,79 289,87 289,101 C289,116 274,124 254,124 C234,124 220,114 218,98 L240,93 C241,102 248,106 255,106 C264,106 270,101 270,95 C270,87 262,83 248,78 C230,71 219,64 219,50 C219,37 234,30 255,30 Z" />
+  <!-- WFS Official Red: #E21B23 -->
+  <g id="wfs-brand-logo">
+    <!-- WFS Vortex / Spiral Symbol -->
+    <g transform="translate(45, 40)">
+      <!-- Outer Dynamic Crescent -->
+      <path class="wfs-red" d="M 200,45 C 285,45 355,115 355,200 C 355,265 315,320 255,344 C 230,354 200,360 170,360 C 235,348 290,295 290,225 C 290,155 230,95 160,95 C 105,95 60,125 38,170 C 50,98 118,45 200,45 Z" />
+      
+      <!-- Inner Dynamic Crescent -->
+      <path class="wfs-red" d="M 200,355 C 115,355 45,285 45,200 C 45,135 85,80 145,56 C 170,46 200,40 230,40 C 165,52 110,105 110,175 C 110,245 170,305 240,305 C 295,305 340,275 362,230 C 350,302 282,355 200,355 Z" />
+    </g>
+
+    <!-- Wordmark "wfs" -->
+    <text x="445" y="265" class="wfs-wordmark" letter-spacing="-0.03em">wfs</text>
+
+    <!-- Subtitle "A SATS COMPANY" -->
+    <text x="450" y="325" class="wfs-sub">A SATS COMPANY</text>
   </g>
-
-  <!-- "A SATS COMPANY" Subtitle -->
-  <text 
-    x="6" 
-    y="136" 
-    fill="#E31B23" 
-    font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" 
-    font-weight="800" 
-    font-size="22" 
-    letter-spacing="4.5"
-  >A SATS COMPANY</text>
 </svg>
