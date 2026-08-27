@@ -197,6 +197,7 @@ function doPost(e) {
  * filtrando por período de data e tipo de combustível
  */
 function atualizarPrecosCombustivel(data) {
+  var NOME_ABA = "Dados_Raizen";
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) {
@@ -214,25 +215,42 @@ function atualizarPrecosCombustivel(data) {
       return { sucesso: false, mensagem: "A planilha não possui lançamentos para atualizar." };
     }
 
-    // Garante cabeçalhos de Valor/Litro (Coluna M / 13) e Valor Total (Coluna N / 14)
-    var headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 14)).getDisplayValues()[0];
-    var colM = headers[12] || "";
-    var colN = headers[13] || "";
+    var lastCol = Math.max(sheet.getLastColumn(), 14);
+    var fullRange = sheet.getRange(1, 1, lastRow, lastCol);
+    var displayValues = fullRange.getDisplayValues();
+    var rawValues = fullRange.getValues();
 
-    if (!colM || colM.indexOf("Valor") === -1) {
-      sheet.getRange(1, 13).setValue("Valor/Litro")
+    var headerDisplay = displayValues[0];
+    var headerLower = headerDisplay.map(function(h) { return String(h || "").trim().toLowerCase(); });
+
+    function findColIdx(aliases, defaultIdx) {
+      for (var c = 0; c < headerLower.length; c++) {
+        for (var a = 0; a < aliases.length; a++) {
+          if (headerLower[c].indexOf(aliases[a].toLowerCase()) !== -1) return c;
+        }
+      }
+      return defaultIdx;
+    }
+
+    var idxData = findColIdx(['data do abastecimento', 'data', 'dt'], 1);
+    var idxProduto = findColIdx(['produto', 'combustivel', 'item'], 7);
+    var idxVolume = findColIdx(['volume', 'litro', 'litros', 'qtd', 'quantidade'], 8);
+    var idxValorLitro = findColIdx(['valor/litro', 'valor litro', 'preço/litro', 'preco/litro', 'unitario'], 12);
+    var idxValorTotal = findColIdx(['valor total', 'vl total', 'total (r$)', 'total'], 13);
+
+    // Garante cabeçalhos de Valor/Litro e Valor Total
+    if (idxValorLitro === -1 || idxValorLitro >= headerDisplay.length || !headerDisplay[idxValorLitro]) {
+      idxValorLitro = 12;
+      sheet.getRange(1, idxValorLitro + 1).setValue("Valor/Litro")
         .setBackground("#E31B23").setFontColor("#FFFFFF").setFontWeight("bold")
         .setHorizontalAlignment("center").setVerticalAlignment("middle");
     }
-    if (!colN || colN.indexOf("Total") === -1) {
-      sheet.getRange(1, 14).setValue("Valor Total")
+    if (idxValorTotal === -1 || idxValorTotal >= headerDisplay.length || !headerDisplay[idxValorTotal]) {
+      idxValorTotal = 13;
+      sheet.getRange(1, idxValorTotal + 1).setValue("Valor Total")
         .setBackground("#E31B23").setFontColor("#FFFFFF").setFontWeight("bold")
         .setHorizontalAlignment("center").setVerticalAlignment("middle");
     }
-
-    var dataRange = sheet.getRange(2, 1, lastRow - 1, Math.max(sheet.getLastColumn(), 14));
-    var values = dataRange.getDisplayValues();
-    var rawValues = dataRange.getValues();
 
     var filtroProduto = data.produto ? String(data.produto).trim().toUpperCase() : "TODOS";
     var valorLitroNum = typeof data.valorLitro === 'number' ? data.valorLitro : parseFloat(String(data.valorLitro || 0).replace(',', '.'));
@@ -267,14 +285,15 @@ function atualizarPrecosCombustivel(data) {
     var totalVolumeAtualizado = 0;
     var totalFinanceiroAtualizado = 0;
 
-    for (var i = 0; i < values.length; i++) {
-      var rowIdx = i + 2;
-      var row = values[i];
-      var rawRow = rawValues[i];
+    for (var r = 1; r < displayValues.length; r++) {
+      var rowIdx = r + 1;
+      var rowDisp = displayValues[r];
+      var rowRaw = rawValues[r];
 
-      var rowDataStr = row[1] || ""; // Coluna B: Data
-      var rowProdStr = (row[7] || "").toUpperCase(); // Coluna H: Produto
-      var rowVolStr = row[8] || rawRow[8] || "0"; // Coluna I: Volume
+      var rowDataStr = rowDisp[idxData] || "";
+      var rowProdStr = String(rowDisp[idxProduto] || "").toUpperCase();
+      var rawVol = rowRaw[idxVolume];
+      var dispVol = rowDisp[idxVolume];
 
       // Valida filtro de combustível
       if (filtroProduto !== "TODOS" && rowProdStr.indexOf(filtroProduto) === -1 && filtroProduto.indexOf(rowProdStr) === -1) {
@@ -296,20 +315,34 @@ function atualizarPrecosCombustivel(data) {
         }
       }
 
-      // Converte volume
-      var volNum = parseFloat(String(rowVolStr).replace(/[^\d,\.]/g, '').replace(/\./g, '').replace(',', '.'));
-      if (isNaN(volNum)) volNum = 0;
+      // Extração precisa e segura do Volume
+      var volNum = 0;
+      if (typeof rawVol === 'number' && !isNaN(rawVol) && rawVol > 0) {
+        volNum = rawVol;
+      } else {
+        var vStr = String(dispVol || rawVol || "0").trim();
+        vStr = vStr.replace(/[^\d,\.-]/g, '');
+        if (vStr.indexOf(',') !== -1 && vStr.indexOf('.') !== -1) {
+          vStr = vStr.replace(/\./g, '').replace(',', '.');
+        } else if (vStr.indexOf(',') !== -1) {
+          vStr = vStr.replace(',', '.');
+        }
+        volNum = parseFloat(vStr);
+        if (isNaN(volNum)) volNum = 0;
+      }
 
-      var valorTotalRow = volNum * valorLitroNum;
+      var valorTotalRow = Math.round(volNum * valorLitroNum * 100) / 100;
 
-      // Grava nas Colunas M (13) e N (14)
-      sheet.getRange(rowIdx, 13).setValue(valorLitroNum).setNumberFormat("R$ #,##0.00");
-      sheet.getRange(rowIdx, 14).setValue(valorTotalRow).setNumberFormat("R$ #,##0.00");
+      // Grava nas Colunas M (Valor/Litro) e N (Valor Total)
+      sheet.getRange(rowIdx, idxValorLitro + 1).setValue(valorLitroNum).setNumberFormat("R$ #,##0.00");
+      sheet.getRange(rowIdx, idxValorTotal + 1).setValue(valorTotalRow).setNumberFormat("R$ #,##0.00");
 
       updatedCount++;
       totalVolumeAtualizado += volNum;
       totalFinanceiroAtualizado += valorTotalRow;
     }
+
+    SpreadsheetApp.flush();
 
     return {
       sucesso: true,
@@ -393,6 +426,18 @@ function lerRegistrosPlanilha() {
 
       // Ignora linhas totalmente em branco
       if (!numVal && !cliVal && !volVal) return null;
+
+      // Se tiver valorLitro e volume, mas valorTotal estiver zerado ou vazio, calcula na hora
+      var vLitroF = parseFloat(String(valorLitroVal || "").replace(/[^\d,\.-]/g, "").replace(/\./g, "").replace(",", "."));
+      var vVolF = parseFloat(String(volVal || "").replace(/[^\d,\.-]/g, "").replace(/\./g, "").replace(",", "."));
+      var vTotF = parseFloat(String(valorTotalVal || "").replace(/[^\d,\.-]/g, "").replace(/\./g, "").replace(",", "."));
+
+      if (!isNaN(vLitroF) && vLitroF > 0 && !isNaN(vVolF) && vVolF > 0) {
+        if (!valorTotalVal || isNaN(vTotF) || vTotF === 0) {
+          var calcTot = Math.round(vLitroF * vVolF * 100) / 100;
+          valorTotalVal = "R$ " + calcTot.toFixed(2).replace(".", ",");
+        }
+      }
 
       return {
         "id": "sheet-row-" + (rIdx + 2) + "-" + numVal,

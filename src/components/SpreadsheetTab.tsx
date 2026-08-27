@@ -852,7 +852,10 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                 {filteredRecords.map((r, index) => {
                   const volFloat = parseVolumeFloat(r.volume);
                   const precoLitroFloat = r.valorLitro ? parseCurrencyFloat(r.valorLitro) : 0;
-                  const totalCalculado = r.valorTotal ? r.valorTotal : (precoLitroFloat > 0 && volFloat > 0 ? formatCurrencyBRL(volFloat * precoLitroFloat) : '-');
+                  const totalValFloat = r.valorTotal ? parseCurrencyFloat(r.valorTotal) : 0;
+                  const totalCalculado = totalValFloat > 0 
+                    ? (r.valorTotal?.includes('R$') ? r.valorTotal : formatCurrencyBRL(totalValFloat))
+                    : (precoLitroFloat > 0 && volFloat > 0 ? formatCurrencyBRL(volFloat * precoLitroFloat) : '-');
 
                   return (
                     <tr

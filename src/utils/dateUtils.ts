@@ -110,27 +110,49 @@ export function isRecordInDateRange(
 }
 
 /**
- * Converte string de volume (ex: "224,00" ou "1.450,50 L") para número decimal float
+ * Converte string de volume (ex: "224,00", "32.00", "1.450,50 L" ou 32) para número decimal float
  */
-export function parseVolumeFloat(volumeStr?: string | null): number {
-  if (!volumeStr) return 0;
-  const clean = String(volumeStr)
-    .replace(/[^\d,\.]/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
+export function parseVolumeFloat(volumeStr?: string | number | null): number {
+  if (volumeStr === undefined || volumeStr === null || volumeStr === '') return 0;
+  if (typeof volumeStr === 'number') return isNaN(volumeStr) ? 0 : volumeStr;
+  
+  let clean = String(volumeStr).trim();
+  if (!clean || clean === '-') return 0;
+
+  // Remove caracteres que não sejam dígitos, vírgula, ponto ou sinal negativo
+  clean = clean.replace(/[^\d,\.-]/g, '');
+
+  // Se tiver vírgula e ponto (formato brasileiro 1.450,50):
+  if (clean.includes(',') && clean.includes('.')) {
+    clean = clean.replace(/\./g, '').replace(',', '.');
+  } else if (clean.includes(',')) {
+    // Apenas vírgula decimal (ex: 224,00 ou 32,5)
+    clean = clean.replace(',', '.');
+  }
+
   const num = parseFloat(clean);
   return isNaN(num) ? 0 : num;
 }
 
 /**
- * Converte string de valor monetário (ex: "5,89" ou "R$ 6,20") para número float
+ * Converte string de valor monetário (ex: "5,89", "R$ 12,00", "12.50" ou 12) para número float
  */
-export function parseCurrencyFloat(currencyStr?: string | null): number {
-  if (!currencyStr) return 0;
-  const clean = String(currencyStr)
-    .replace(/[^\d,\.]/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
+export function parseCurrencyFloat(currencyStr?: string | number | null): number {
+  if (currencyStr === undefined || currencyStr === null || currencyStr === '') return 0;
+  if (typeof currencyStr === 'number') return isNaN(currencyStr) ? 0 : currencyStr;
+
+  let clean = String(currencyStr).trim();
+  if (!clean || clean === '-') return 0;
+
+  // Remove símbolos não numéricos exceto vírgula, ponto e hífen
+  clean = clean.replace(/[^\d,\.-]/g, '');
+
+  if (clean.includes(',') && clean.includes('.')) {
+    clean = clean.replace(/\./g, '').replace(',', '.');
+  } else if (clean.includes(',')) {
+    clean = clean.replace(',', '.');
+  }
+
   const num = parseFloat(clean);
   return isNaN(num) ? 0 : num;
 }

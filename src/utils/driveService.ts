@@ -1,4 +1,5 @@
 import { AbastecimentoRecord } from '../types';
+import { parseVolumeFloat, parseCurrencyFloat, formatCurrencyBRL } from './dateUtils';
 
 export interface ProcessReceiptFlowResult {
   sucesso: boolean;
@@ -245,27 +246,44 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
 
   const normalizeRecords = (list: any[]): AbastecimentoRecord[] => {
     if (!Array.isArray(list)) return [];
-    return list.map((r: any, idx: number) => ({
-      id: r.id || `sheet-row-${idx + 1}-${r.numero || r['Número'] || idx}`,
-      numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
-      dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
-      formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
-      cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
-      horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
-      inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
-      terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
-      produto: r.produto || r['Produto'] || 'DIESEL',
-      volume: r.volume || r['Volume'] || '0,00',
-      obs: r.obs || r['Obs.:'] || r['Obs'] || '',
-      assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
-      driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
-      valorLitro: r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || r.precoLitro || '',
-      valorTotal: r.valorTotal || r['Valor Total'] || r['Total (R$)'] || r.total || '',
-      fileName: r.fileName || (r.numero ? `Comprovante_${r.numero}.jpg` : `Registro_${idx + 1}.jpg`),
-      dataCriacao: r.dataCriacao || new Date().toISOString(),
-      statusEnvio: 'enviado_drive',
-      statusMsg: 'Sincronizado da planilha Dados_Raizen',
-    }));
+    return list.map((r: any, idx: number) => {
+      const volRaw = r.volume || r['Volume'] || r['volume'] || '0,00';
+      const precoLitroRaw = r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || r['Preço/Litro'] || r.precoLitro || '';
+      let totalRaw = r.valorTotal || r['Valor Total'] || r['Total (R$)'] || r.total || '';
+
+      const volNum = parseVolumeFloat(volRaw);
+      const precoNum = parseCurrencyFloat(precoLitroRaw);
+
+      // Se tiver preço por litro e volume válidos, garante que o valor total não fique zerado ou em branco
+      if (precoNum > 0 && volNum > 0) {
+        const totalNum = parseCurrencyFloat(totalRaw);
+        if (!totalRaw || totalNum === 0 || totalRaw === 'R$ 0,00' || totalRaw === '0' || totalRaw === '-') {
+          totalRaw = formatCurrencyBRL(volNum * precoNum);
+        }
+      }
+
+      return {
+        id: r.id || `sheet-row-${idx + 1}-${r.numero || r['Número'] || idx}`,
+        numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
+        dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
+        formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
+        cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
+        horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
+        inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
+        terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
+        produto: r.produto || r['Produto'] || 'DIESEL',
+        volume: volRaw,
+        obs: r.obs || r['Obs.:'] || r['Obs'] || '',
+        assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
+        driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
+        valorLitro: precoNum > 0 ? (String(precoLitroRaw).includes('R$') ? String(precoLitroRaw) : formatCurrencyBRL(precoNum)) : '',
+        valorTotal: totalRaw ? (String(totalRaw).includes('R$') ? String(totalRaw) : formatCurrencyBRL(parseCurrencyFloat(totalRaw))) : '',
+        fileName: r.fileName || (r.numero ? `Comprovante_${r.numero}.jpg` : `Registro_${idx + 1}.jpg`),
+        dataCriacao: r.dataCriacao || new Date().toISOString(),
+        statusEnvio: 'enviado_drive',
+        statusMsg: 'Sincronizado da planilha Dados_Raizen',
+      };
+    });
   };
 
   // 1. Try fetching via server backend proxy (Fastest, follows 302 redirects, no browser CORS issues)
