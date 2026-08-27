@@ -1,12 +1,12 @@
 /**
  * Google Apps Script Templates
- * 1. webhook.gs: Comunicação front/back, upload no Drive e leitura dos dados da aba Dados_Raizen
+ * 1. webhook.gs: Comunicação front/back, upload no Drive, leitura e atualização de valores na aba Dados_Raizen
  * 2. Código.gs: Processador automático com Gemini IA, grava na planilha e move fotos para Processados
  */
 
 export const SCRIPT_WEBHOOK_GS = `/**
- * WFS / RAÍZEN - SCRIPT 3 (HÍBRIDO REVALIDADO COM SUPORTE A TOKEN DE SEGURANÇA, JSONP E CORS)
- * Baseado 100% no Script 1 funcional + Leitura de cabeçalhos (incluindo Data) + Validação de Token Opcional
+ * WFS / RAÍZEN - SCRIPT 3 (HÍBRIDO REVALIDADO COM SUPORTE A TOKEN DE SEGURANÇA, JSONP, CORS E LANÇAMENTO DE PREÇOS)
+ * Baseado 100% no Script 1 funcional + Leitura de cabeçalhos + Atualização de Preços por Litro (Colunas M e N)
  */
 
 var NOME_ABA = "Dados_Raizen";
@@ -17,7 +17,9 @@ var WEBHOOK_SECRET_TOKEN = "";
 
 function validarAcessoToken(e, postData) {
   var expectedToken = WEBHOOK_SECRET_TOKEN || PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN') || "";
-  if (!expectedToken) return true; // Se não houver token configurado, permite livre acesso compatível
+  if (!expectedToken || !expectedToken.trim()) return true; // Se não houver token configurado, permite livre acesso compatível
+  
+  expectedToken = String(expectedToken).trim();
   
   var receivedToken = "";
   if (e && e.parameter && e.parameter.token) {
@@ -26,7 +28,7 @@ function validarAcessoToken(e, postData) {
     receivedToken = postData.token;
   }
   
-  return receivedToken === expectedToken;
+  return receivedToken ? String(receivedToken).trim() === expectedToken : false;
 }
 
 /**
@@ -84,8 +86,7 @@ function doGet(e) {
 }
 
 /**
- * Endpoint POST: Salva foto no Drive ou retorna dados
- * (NÃO grava mais linha na planilha diretamente)
+ * Endpoint POST: Salva foto no Drive, lê dados ou atualiza preços
  */
 function doPost(e) {
   var output;
@@ -119,7 +120,38 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 3. Gravação: Salvar Foto no Drive (SEM gravar linha na planilha)
+    // 3. Atualização de Valores por Litro e Valor Total (Colunas M e N)
+    if (data.action === 'update_fuel_prices' || data.action === 'atualizar_valores' || data.action === 'salvar_precos') {
+      var resPrecos = atualizarPrecosCombustivel(data);
+      return ContentService.createTextOutput(JSON.stringify(resPrecos))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 4. Executar Robô de IA manualmente (On-Demand) via Webhook
+    if (data.action === 'processar_agora' || data.action === 'processar_fila' || data.action === 'executar_robo') {
+      try {
+        if (typeof processarPastaAbastecimentos === 'function') {
+          var resRobo = processarPastaAbastecimentos(20);
+          return ContentService.createTextOutput(JSON.stringify({
+            sucesso: true,
+            mensagem: (resRobo && resRobo.mensagem) || "Robô de IA executado com sucesso!",
+            detalhes: resRobo || null
+          })).setMimeType(ContentService.MimeType.JSON);
+        } else {
+          return ContentService.createTextOutput(JSON.stringify({
+            sucesso: false,
+            mensagem: "Função 'processarPastaAbastecimentos' não encontrada no projeto. Verifique se o Código.gs está salvo no mesmo projeto do Webhook."
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+      } catch (errRobo) {
+        return ContentService.createTextOutput(JSON.stringify({
+          sucesso: false,
+          mensagem: "Erro ao executar robô: " + errRobo.message
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    // 5. Gravação: Salvar Foto no Drive
     if (!data.base64) {
       throw new Error("Imagem ausente.");
     }
@@ -158,6 +190,140 @@ function doPost(e) {
   }
   return ContentService.createTextOutput(JSON.stringify(output))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Função para atualizar o Valor/Litro (Coluna M) e calcular o Valor Total (Coluna N = Volume * Valor/Litro)
+ * filtrando por período de data e tipo de combustível
+ */
+function atualizarPrecosCombustivel(data) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      var scriptProperties = PropertiesService.getScriptProperties();
+      var sheetId = scriptProperties.getProperty('SPREADSHEET_ID');
+      if (sheetId) ss = SpreadsheetApp.openById(sheetId);
+    }
+    if (!ss) return { sucesso: false, mensagem: "Planilha não encontrada. Configure SPREADSHEET_ID se necessário." };
+
+    var sheet = ss.getSheetByName(NOME_ABA);
+    if (!sheet) return { sucesso: false, mensagem: "Aba '" + NOME_ABA + "' não encontrada na planilha." };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { sucesso: false, mensagem: "A planilha não possui lançamentos para atualizar." };
+    }
+
+    // Garante cabeçalhos de Valor/Litro (Coluna M / 13) e Valor Total (Coluna N / 14)
+    var headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 14)).getDisplayValues()[0];
+    var colM = headers[12] || "";
+    var colN = headers[13] || "";
+
+    if (!colM || colM.indexOf("Valor") === -1) {
+      sheet.getRange(1, 13).setValue("Valor/Litro")
+        .setBackground("#E31B23").setFontColor("#FFFFFF").setFontWeight("bold")
+        .setHorizontalAlignment("center").setVerticalAlignment("middle");
+    }
+    if (!colN || colN.indexOf("Total") === -1) {
+      sheet.getRange(1, 14).setValue("Valor Total")
+        .setBackground("#E31B23").setFontColor("#FFFFFF").setFontWeight("bold")
+        .setHorizontalAlignment("center").setVerticalAlignment("middle");
+    }
+
+    var dataRange = sheet.getRange(2, 1, lastRow - 1, Math.max(sheet.getLastColumn(), 14));
+    var values = dataRange.getDisplayValues();
+    var rawValues = dataRange.getValues();
+
+    var filtroProduto = data.produto ? String(data.produto).trim().toUpperCase() : "TODOS";
+    var valorLitroNum = typeof data.valorLitro === 'number' ? data.valorLitro : parseFloat(String(data.valorLitro || 0).replace(',', '.'));
+    if (isNaN(valorLitroNum) || valorLitroNum < 0) {
+      return { sucesso: false, mensagem: "Valor por litro inválido informado." };
+    }
+
+    var dataInicioStr = data.dataInicio ? String(data.dataInicio).trim() : "";
+    var dataFimStr = data.dataFim ? String(data.dataFim).trim() : dataInicioStr;
+
+    function parseDateGAS(dStr) {
+      if (!dStr) return null;
+      var str = String(dStr).trim();
+      var br = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})/);
+      if (br) {
+        var y = parseInt(br[3], 10);
+        if (y < 100) y += 2000;
+        return new Date(y, parseInt(br[2], 10) - 1, parseInt(br[1], 10), 12, 0, 0);
+      }
+      var iso = str.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+      if (iso) {
+        return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10), 12, 0, 0);
+      }
+      var f = new Date(str);
+      return isNaN(f.getTime()) ? null : new Date(f.getFullYear(), f.getMonth(), f.getDate(), 12, 0, 0);
+    }
+
+    var dateInicio = parseDateGAS(dataInicioStr);
+    var dateFim = parseDateGAS(dataFimStr);
+
+    var updatedCount = 0;
+    var totalVolumeAtualizado = 0;
+    var totalFinanceiroAtualizado = 0;
+
+    for (var i = 0; i < values.length; i++) {
+      var rowIdx = i + 2;
+      var row = values[i];
+      var rawRow = rawValues[i];
+
+      var rowDataStr = row[1] || ""; // Coluna B: Data
+      var rowProdStr = (row[7] || "").toUpperCase(); // Coluna H: Produto
+      var rowVolStr = row[8] || rawRow[8] || "0"; // Coluna I: Volume
+
+      // Valida filtro de combustível
+      if (filtroProduto !== "TODOS" && rowProdStr.indexOf(filtroProduto) === -1 && filtroProduto.indexOf(rowProdStr) === -1) {
+        continue;
+      }
+
+      // Valida intervalo de datas
+      if (dateInicio || dateFim) {
+        var rowDate = parseDateGAS(rowDataStr);
+        if (!rowDate) continue;
+
+        if (dateInicio) {
+          var startTime = new Date(dateInicio.getFullYear(), dateInicio.getMonth(), dateInicio.getDate(), 0, 0, 0).getTime();
+          if (rowDate.getTime() < startTime) continue;
+        }
+        if (dateFim) {
+          var endTime = new Date(dateFim.getFullYear(), dateFim.getMonth(), dateFim.getDate(), 23, 59, 59).getTime();
+          if (rowDate.getTime() > endTime) continue;
+        }
+      }
+
+      // Converte volume
+      var volNum = parseFloat(String(rowVolStr).replace(/[^\d,\.]/g, '').replace(/\./g, '').replace(',', '.'));
+      if (isNaN(volNum)) volNum = 0;
+
+      var valorTotalRow = volNum * valorLitroNum;
+
+      // Grava nas Colunas M (13) e N (14)
+      sheet.getRange(rowIdx, 13).setValue(valorLitroNum).setNumberFormat("R$ #,##0.00");
+      sheet.getRange(rowIdx, 14).setValue(valorTotalRow).setNumberFormat("R$ #,##0.00");
+
+      updatedCount++;
+      totalVolumeAtualizado += volNum;
+      totalFinanceiroAtualizado += valorTotalRow;
+    }
+
+    return {
+      sucesso: true,
+      mensagem: "Preços atualizados com sucesso em " + updatedCount + " linha(s) da planilha Dados_Raizen!",
+      totalAtualizados: updatedCount,
+      totalVolume: totalVolumeAtualizado,
+      totalFinanceiro: totalFinanceiroAtualizado
+    };
+  } catch (e) {
+    return {
+      sucesso: false,
+      mensagem: "Erro ao atualizar valores na planilha: " + e.message
+    };
+  }
 }
 
 /**
@@ -204,6 +370,8 @@ function lerRegistrosPlanilha() {
     var idxObs = getIdx(["obs", "observação", "observacao", "placa"], idxData === 1 ? 9 : 8);
     var idxAssinatura = getIdx(["assinatura do cliente", "assinatura", "conferido"], idxData === 1 ? 10 : 9);
     var idxFoto = getIdx(["foto da nota", "foto", "comprovante", "link", "drive"], idxData === 1 ? 11 : 10);
+    var idxValorLitro = getIdx(["valor/litro", "valor litro", "preço/litro", "preco/litro", "unitario", "unitário"], 12);
+    var idxValorTotal = getIdx(["valor total", "total (r$)", "total r$", "total"], 13);
 
     var rows = data.slice(1);
 
@@ -220,6 +388,8 @@ function lerRegistrosPlanilha() {
       var obsVal = (idxObs !== -1 && row[idxObs]) ? row[idxObs] : "";
       var assVal = (idxAssinatura !== -1 && row[idxAssinatura]) ? row[idxAssinatura] : "";
       var fotoVal = (idxFoto !== -1 && row[idxFoto]) ? row[idxFoto] : "";
+      var valorLitroVal = (idxValorLitro !== -1 && row[idxValorLitro]) ? row[idxValorLitro] : "";
+      var valorTotalVal = (idxValorTotal !== -1 && row[idxValorTotal]) ? row[idxValorTotal] : "";
 
       // Ignora linhas totalmente em branco
       if (!numVal && !cliVal && !volVal) return null;
@@ -239,6 +409,8 @@ function lerRegistrosPlanilha() {
         "Obs.:": obsVal,
         "Assinatura do Cliente": assVal,
         "Foto da Nota": fotoVal,
+        "Valor/Litro": valorLitroVal,
+        "Valor Total": valorTotalVal,
         
         // Mapeamento em camelCase para compatibilidade universal
         "numero": numVal,
@@ -253,7 +425,9 @@ function lerRegistrosPlanilha() {
         "obs": obsVal,
         "assinaturaCliente": assVal,
         "fotoNota": fotoVal,
-        "driveFileUrl": fotoVal
+        "driveFileUrl": fotoVal,
+        "valorLitro": valorLitroVal,
+        "valorTotal": valorTotalVal
       };
     }).filter(function(item) { return item !== null; });
   } catch (e) {
@@ -267,7 +441,7 @@ export const SCRIPT_CODIGO_GS = `/**
  * ============================================================================
  * Função: Varre a pasta do Drive periodicamente via acionador temporal,
  * envia os comprovantes para a API Gemini (extraindo Número, Data, Horários, etc.),
- * grava o resultado na aba "Dados_Raizen" e move os arquivos para "Processados".
+ * grava o resultado na aba "Dados_Raizen" (Colunas A a N) e move para "Processados".
  * ============================================================================
  */
 var ABASTECIMENTO_CONFIG = {
@@ -276,63 +450,95 @@ var ABASTECIMENTO_CONFIG = {
   MAX_FILE_SIZE_MB: 8
 };
 
-// Modelo Gemini oficial para Google Apps Script REST v1beta
-var GEMINI_MODEL_ABASTECIMENTO = 'gemini-1.5-flash';
+// Modelo configurado e validado
+var GEMINI_MODEL_ABASTECIMENTO = 'gemini-3.5-flash';
 
-function processarPastaAbastecimentos() {
-  var scriptProperties = PropertiesService.getScriptProperties();
+function processarPastaAbastecimentos(limiteLote) {
+  var lock = LockService.getScriptLock();
+  var temLock = lock.tryLock(5000);
 
-  var folderId = scriptProperties.getProperty('DRIVE_FOLDER_ID_ABASTECIMENTO') ||
-                 scriptProperties.getProperty('DRIVE_FOLDER_ID');
-  var apiKey = scriptProperties.getProperty('GEMINI_API_KEY_ABASTECIMENTO') ||
-               scriptProperties.getProperty('GEMINI_API_KEY');
-  
-  if (!folderId || !apiKey) {
-    Logger.log("Erro: Propriedades DRIVE_FOLDER_ID ou GEMINI_API_KEY não configuradas.");
-    return;
+  if (!temLock) {
+    Logger.log("Execução anterior ainda em andamento. Pulando esta chamada.");
+    return { sucesso: false, mensagem: "Execução já em andamento. Aguarde alguns instantes." };
   }
-  
-  var folder;
+
+  var countProcessados = 0;
+  var countErros = 0;
+  var maxArquivos = (typeof limiteLote === 'number' && limiteLote > 0) ? limiteLote : 20;
+
   try {
-    folder = DriveApp.getFolderById(folderId);
-  } catch (e) {
-    Logger.log("Erro de Acesso: Não foi possível acessar a pasta ID: " + folderId);
-    return;
-  }
+    var scriptProperties = PropertiesService.getScriptProperties();
 
-  // Define/Cria a pasta "Processados" antes de varrer os arquivos
-  var processedFolder = getOuCriarSubpasta(folder, ABASTECIMENTO_CONFIG.PASTA_PROCESSADOS);
-
-  var files = folder.getFiles();
-  
-  while (files.hasNext()) {
-    var file = files.next();
-    var mimeType = file.getMimeType();
+    var folderId = scriptProperties.getProperty('DRIVE_FOLDER_ID_ABASTECIMENTO') ||
+                   scriptProperties.getProperty('DRIVE_FOLDER_ID');
+    var apiKey = scriptProperties.getProperty('GEMINI_API_KEY_ABASTECIMENTO') ||
+                 scriptProperties.getProperty('GEMINI_API_KEY');
     
-    if (mimeType.indexOf("image/") === 0 || mimeType === "application/pdf") {
-      try {
-        if (file.getSize() > ABASTECIMENTO_CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024) {
-          Logger.log("Aviso: Arquivo " + file.getName() + " excede o limite de " + ABASTECIMENTO_CONFIG.MAX_FILE_SIZE_MB + "MB.");
-          continue;
+    if (!folderId || !apiKey) {
+      Logger.log("Erro: Propriedades DRIVE_FOLDER_ID ou GEMINI_API_KEY não configuradas.");
+      return { sucesso: false, mensagem: "Propriedades DRIVE_FOLDER_ID ou GEMINI_API_KEY não configuradas no Script." };
+    }
+    
+    var folder;
+    try {
+      folder = DriveApp.getFolderById(folderId);
+    } catch (e) {
+      Logger.log("Erro de Acesso: Não foi possível acessar a pasta ID: " + folderId);
+      return { sucesso: false, mensagem: "Não foi possível acessar a pasta ID: " + folderId };
+    }
+
+    // Define/Cria a pasta "Processados" antes de varrer os arquivos
+    var processedFolder = getOuCriarSubpasta(folder, ABASTECIMENTO_CONFIG.PASTA_PROCESSADOS);
+
+    var files = folder.getFiles();
+    
+    while (files.hasNext() && countProcessados < maxArquivos) {
+      var file = files.next();
+      var mimeType = file.getMimeType();
+      
+      if (mimeType.indexOf("image/") === 0 || mimeType === "application/pdf") {
+        try {
+          if (file.getSize() > ABASTECIMENTO_CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024) {
+            Logger.log("Aviso: Arquivo " + file.getName() + " excede o limite de " + ABASTECIMENTO_CONFIG.MAX_FILE_SIZE_MB + "MB.");
+            continue;
+          }
+          
+          Logger.log("Processando arquivo (" + (countProcessados + 1) + "): " + file.getName());
+
+          // Captura a URL ANTES de mover, pois é o link gravado na planilha
+          var fileUrl = file.getUrl();
+
+          processarUmaNotaAbastecimento(file, apiKey, fileUrl);
+
+          file.moveTo(processedFolder);
+          countProcessados++;
+          Logger.log("Sucesso: Arquivo " + file.getName() + " movido para '" + ABASTECIMENTO_CONFIG.PASTA_PROCESSADOS + "'.");
+          
+          // PAUSA DE SEGURANÇA: 4 segundos entre arquivos para respeitar cotas
+          Utilities.sleep(4000);
+
+        } catch (err) {
+          countErros++;
+          Logger.log('Erro ao processar ' + file.getName() + ': ' + err.message);
         }
-        
-        Logger.log("Processando arquivo: " + file.getName());
-
-        // Captura a URL ANTES de mover, pois é o link gravado na planilha
-        var fileUrl = file.getUrl();
-
-        processarUmaNotaAbastecimento(file, apiKey, fileUrl);
-
-        file.moveTo(processedFolder);
-        Logger.log("Sucesso: Arquivo " + file.getName() + " movido para '" + ABASTECIMENTO_CONFIG.PASTA_PROCESSADOS + "'.");
-        
-        // PAUSA DE SEGURANÇA: 4 segundos entre arquivos para não estourar a cota por minuto
-        Utilities.sleep(4000);
-
-      } catch (err) {
-        Logger.log('Erro ao processar ' + file.getName() + ': ' + err.message);
       }
     }
+
+    var temMaisPendentes = files.hasNext();
+    var mensagemRetorno = countProcessados > 0 
+      ? ("Sucesso: " + countProcessados + " nota(s) processada(s) e inserida(s) na planilha!" + (temMaisPendentes ? " (Ainda restam arquivos na fila - clique novamente para o próximo lote)." : ""))
+      : "Nenhuma foto nova pendente para processar na pasta.";
+
+    Logger.log(mensagemRetorno);
+    return {
+      sucesso: true,
+      processados: countProcessados,
+      erros: countErros,
+      temMais: temMaisPendentes,
+      mensagem: mensagemRetorno
+    };
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -357,7 +563,7 @@ function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
     '  "inicioAbastecimento": "HH:mm ou null", ' +
     '  "terminoAbastecimento": "HH:mm ou null", ' +
     '  "produto": "string ou null (ex: DIESEL, DIESEL S10, JET A-1)", ' +
-    '  "volume": number ou null (Quantidade em litros abastecida, ex: 60.00), ' +
+    '  "volume": number ou null (Quantidade em litros abastecida, ex: 60.00)", ' +
     '  "obs": "string ou null (Prefixo, placa ou equipamento)", ' +
     '  "assinaturaCliente": "string ou null (Nome legível e matrícula de quem assinou)"' +
     '}';
@@ -448,15 +654,15 @@ function salvarAbastecimentoNaPlanilha(dados, fileUrl) {
     ? String(dados.dataAbastecimento).trim() 
     : dataHoje;
 
-  // Verifica o cabeçalho existente para saber se tem a coluna de Data
-  var headerValues = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 11)).getDisplayValues()[0];
+  // Verifica o cabeçalho existente
+  var headerValues = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 14)).getDisplayValues()[0];
   var temColunaData = headerValues.some(function(h) { 
     return h.toLowerCase().indexOf("data") !== -1; 
   });
 
   var novaLinha;
   if (temColunaData) {
-    // 12 Colunas Oficiais (A a L) com Data do Abastecimento na Coluna B:
+    // 14 Colunas Oficiais (A a N):
     novaLinha = [
       dados.numero ? String(dados.numero).trim() : "",                             // A: Número
       dataTratada,                                                                 // B: Data do Abastecimento
@@ -469,7 +675,9 @@ function salvarAbastecimentoNaPlanilha(dados, fileUrl) {
       volumeTratado,                                                               // I: Volume
       dados.obs ? String(dados.obs).trim() : "",                                  // J: Obs.:
       dados.assinaturaCliente ? String(dados.assinaturaCliente).trim() : "",      // K: Assinatura do Cliente
-      fileUrl || ""                                                                // L: Foto da Nota (Link Drive)
+      fileUrl || "",                                                               // L: Foto da Nota (Link Drive)
+      "",                                                                          // M: Valor/Litro (alimentado pelo usuário)
+      ""                                                                           // N: Valor Total (calculado)
     ];
     sheet.appendRow(novaLinha);
     var lastRow = sheet.getLastRow();
@@ -505,7 +713,7 @@ function configurarAbaAbastecimentos(ss) {
   var headers = [
     "Número", "Data do Abastecimento", "Forma de Pagamento", "Cliente", "Hora da Chegada",
     "Início do Abastecimento", "Término do Abastecimento", "Produto",
-    "Volume", "Obs.:", "Assinatura do Cliente", "Foto da Nota"
+    "Volume", "Obs.:", "Assinatura do Cliente", "Foto da Nota", "Valor/Litro", "Valor Total"
   ];
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
   headerRange.setValues([headers]);
@@ -518,7 +726,8 @@ function configurarAbaAbastecimentos(ss) {
 function getOuCriarSubpasta(pastaPai, nome) {
   var subpastas = pastaPai.getFoldersByName(nome);
   return subpastas.hasNext() ? subpastas.next() : pastaPai.createFolder(nome);
-}`;
+}
+`;
 
 // Aliases para compatibilidade
 export const GOOGLE_APPS_SCRIPT_CODE = SCRIPT_WEBHOOK_GS;

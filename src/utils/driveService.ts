@@ -152,22 +152,29 @@ export async function uploadImageToGoogleDrive(
     };
   }
 
-  // 1. Try via server proxy first (Handles CORS, redirects and returns complete JSON)
+  // 1. Try via server proxy first (Handles CORS, redirects, secret token injection and returns complete JSON)
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 40000); // 40s max
+
     const proxyRes = await fetch('/api/upload-drive-proxy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         webhookUrl: targetUrl,
         payload: payload,
+        secretToken: secretToken?.trim(),
       }),
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+
     const text = await proxyRes.text();
-    if (proxyRes.ok && text) {
+    if (text) {
       try {
         const result = JSON.parse(text);
-        if (result && (result.sucesso !== false || result.fileId || result.status === 'ok' || result.status === 'success')) {
+        if (result && (result.sucesso === true || result.fileId || result.status === 'ok' || result.status === 'success')) {
           const fileId = result.fileId || result.id || '';
           return {
             sucesso: true,
@@ -175,23 +182,46 @@ export async function uploadImageToGoogleDrive(
             fileId: fileId,
             driveUrl: fileId ? `https://drive.google.com/file/d/${fileId}/view` : result.driveUrl,
           };
+        } else if (result && result.sucesso === false) {
+          // If the backend gave an explicit error (like token mismatch or sheet error), return it directly to the user
+          return {
+            sucesso: false,
+            mensagem: result.mensagem || 'Falha ao salvar no Google Drive. Verifique a configuração do Webhook/Token.',
+          };
         }
       } catch {
-        // Fall through
+        // Fall through if not valid JSON
       }
     }
   } catch (proxyError: any) {
     console.warn('Proxy upload attempt bypassed:', proxyError.message);
+    if (proxyError.name === 'AbortError') {
+      return {
+        sucesso: false,
+        mensagem: 'Tempo limite esgotado ao enviar para o Google Drive. Verifique sua conexão de internet.',
+      };
+    }
   }
 
   // 2. Direct call from browser to Google Apps Script Web App (handles CORS with text/plain)
   try {
-    await fetch(targetUrl, {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const directUrl = (secretToken && secretToken.trim()) 
+      ? `${targetUrl}${separator}token=${encodeURIComponent(secretToken.trim())}` 
+      : targetUrl;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    await fetch(directUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       mode: 'no-cors',
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     return {
       sucesso: true,
@@ -201,7 +231,7 @@ export async function uploadImageToGoogleDrive(
     console.error('Direct upload failed:', directError);
     return {
       sucesso: false,
-      mensagem: `Erro ao enviar para o Google Drive: ${directError.message}`,
+      mensagem: `Erro ao enviar para o Google Drive: ${directError.message || 'Falha de rede'}`,
     };
   }
 }
@@ -229,6 +259,8 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
       obs: r.obs || r['Obs.:'] || r['Obs'] || '',
       assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
       driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
+      valorLitro: r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || r.precoLitro || '',
+      valorTotal: r.valorTotal || r['Valor Total'] || r['Total (R$)'] || r.total || '',
       fileName: r.fileName || (r.numero ? `Comprovante_${r.numero}.jpg` : `Registro_${idx + 1}.jpg`),
       dataCriacao: r.dataCriacao || new Date().toISOString(),
       statusEnvio: 'enviado_drive',
@@ -454,6 +486,90 @@ export async function testGoogleIntegration(webhookUrl: string, secretToken?: st
 }
 
 /**
+ * Triggers the Google Apps Script AI robot on-demand to process all pending fuel receipts in Drive
+ */
+export interface TriggerProcessingResult {
+  sucesso: boolean;
+  mensagem: string;
+  detalhes?: any;
+}
+
+export async function triggerGasProcessing(
+  webhookUrl?: string,
+  secretToken?: string
+): Promise<TriggerProcessingResult> {
+  const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+  if (!targetUrl) {
+    return {
+      sucesso: false,
+      mensagem: 'URL do Webhook do Google Apps Script não informada.',
+    };
+  }
+
+  // 1. Try server proxy first (Handles CORS, long timeout and JSON response)
+  try {
+    const res = await fetch('/api/trigger-gas-processing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookUrl: targetUrl,
+        secretToken: secretToken?.trim(),
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.sucesso) {
+        return {
+          sucesso: true,
+          mensagem: data.mensagem || 'Robô executado com sucesso!',
+          detalhes: data.data?.detalhes || data.data,
+        };
+      } else if (data && data.mensagem) {
+        return {
+          sucesso: false,
+          mensagem: data.mensagem,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Trigger] Proxy trigger attempt failed:', err.message);
+  }
+
+  // 2. Direct browser fallback call
+  try {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const effectiveToken = secretToken?.trim();
+    const directUrl = effectiveToken
+      ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}`
+      : targetUrl;
+
+    const payload = {
+      action: 'processar_agora',
+      timestamp: new Date().toISOString(),
+      ...(effectiveToken ? { token: effectiveToken } : {}),
+    };
+
+    await fetch(directUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      mode: 'no-cors',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Comando de processamento enviado com sucesso ao robô!',
+    };
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      mensagem: `Erro ao acionar robô: ${err.message}`,
+    };
+  }
+}
+
+/**
  * Resizes and compresses image efficiently (1600px max, 0.82 quality)
  * Ensures ultra-fast upload from mobile/Wi-Fi with 100% OCR sharpness
  */
@@ -523,3 +639,109 @@ export async function compressImage(
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * Sends price update request to Google Apps Script / Google Sheets backend
+ */
+export interface UpdateFuelPricesPayload {
+  dataInicio?: string;
+  dataFim?: string;
+  produto: string;
+  valorLitro: number;
+}
+
+export interface UpdateFuelPricesResult {
+  sucesso: boolean;
+  mensagem: string;
+  totalAtualizados?: number;
+  totalVolume?: number;
+  totalFinanceiro?: number;
+}
+
+export async function updateFuelPricesInSheet(
+  webhookUrl?: string,
+  secretToken?: string,
+  params?: UpdateFuelPricesPayload
+): Promise<UpdateFuelPricesResult> {
+  const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+  if (!targetUrl) {
+    return {
+      sucesso: false,
+      mensagem: 'URL do Google Apps Script não configurada.',
+    };
+  }
+
+  const payload = {
+    action: 'update_fuel_prices',
+    dataInicio: params?.dataInicio || '',
+    dataFim: params?.dataFim || params?.dataInicio || '',
+    produto: params?.produto || 'TODOS',
+    valorLitro: params?.valorLitro || 0,
+    timestamp: new Date().toISOString(),
+  };
+
+  // 1. Try server proxy first
+  try {
+    const res = await fetch('/api/update-fuel-prices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookUrl: targetUrl,
+        secretToken: secretToken?.trim(),
+        ...payload,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.sucesso !== false) {
+        return {
+          sucesso: true,
+          mensagem: data.mensagem || 'Valores atualizados na planilha com sucesso!',
+          totalAtualizados: data.totalAtualizados,
+          totalVolume: data.totalVolume,
+          totalFinanceiro: data.totalFinanceiro,
+        };
+      } else if (data && data.mensagem) {
+        return {
+          sucesso: false,
+          mensagem: data.mensagem,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Price Update] Proxy call failed, attempting direct fetch:', err.message);
+  }
+
+  // 2. Direct browser fallback call
+  try {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const effectiveToken = secretToken?.trim();
+    const directUrl = effectiveToken
+      ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}`
+      : targetUrl;
+
+    const fullPayload = {
+      ...payload,
+      ...(effectiveToken ? { token: effectiveToken } : {}),
+    };
+
+    await fetch(directUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(fullPayload),
+      mode: 'no-cors',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Solicitação de atualização de preços enviada com sucesso para o Google Sheets!',
+    };
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      mensagem: `Erro ao enviar atualização de valores: ${err.message}`,
+    };
+  }
+}
+

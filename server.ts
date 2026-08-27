@@ -25,13 +25,14 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '60mb' }));
 app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 
-// Persistent configuration storage (so all PCs, mobile devices, and incognito sessions share the same webhook URL)
+// Persistent configuration storage (so all PCs, mobile devices, and incognito sessions share the same webhook URL and token)
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'app_config.json');
 
 interface AppConfig {
   webhookUrl: string;
   autoUploadToDrive: boolean;
   sheetUrl?: string;
+  secretToken?: string;
   updatedAt?: string;
 }
 
@@ -42,6 +43,7 @@ let cachedConfig: AppConfig = {
     'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec',
   autoUploadToDrive: true,
   sheetUrl: '',
+  secretToken: process.env.GOOGLE_APPS_SCRIPT_TOKEN || process.env.VITE_GOOGLE_APPS_SCRIPT_TOKEN || '',
 };
 
 // Load saved config on startup
@@ -54,7 +56,7 @@ try {
         ...cachedConfig,
         ...parsed,
       };
-      console.log('[Config] Configuração carregada com sucesso do disco:', cachedConfig.webhookUrl ? cachedConfig.webhookUrl.slice(0, 45) + '...' : '(vazio)');
+      console.log('[Config] Configuração carregada com sucesso do disco:', cachedConfig.webhookUrl ? cachedConfig.webhookUrl.slice(0, 45) + '...' : '(vazio)', cachedConfig.secretToken ? '(Token configurado)' : '(Sem token)');
     }
   }
 } catch (e: any) {
@@ -99,6 +101,7 @@ app.get('/api/config', (req, res) => {
       webhookUrl: cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL || '',
       autoUploadToDrive: cachedConfig.autoUploadToDrive ?? true,
       sheetUrl: cachedConfig.sheetUrl || '',
+      secretToken: cachedConfig.secretToken || '',
       updatedAt: cachedConfig.updatedAt || new Date().toISOString(),
     },
   });
@@ -106,11 +109,12 @@ app.get('/api/config', (req, res) => {
 
 app.post('/api/config', (req, res) => {
   try {
-    const { webhookUrl, autoUploadToDrive, sheetUrl } = req.body || {};
+    const { webhookUrl, autoUploadToDrive, sheetUrl, secretToken } = req.body || {};
     cachedConfig = {
       webhookUrl: typeof webhookUrl === 'string' ? webhookUrl.trim() : cachedConfig.webhookUrl,
       autoUploadToDrive: typeof autoUploadToDrive === 'boolean' ? autoUploadToDrive : cachedConfig.autoUploadToDrive,
       sheetUrl: typeof sheetUrl === 'string' ? sheetUrl.trim() : cachedConfig.sheetUrl,
+      secretToken: typeof secretToken === 'string' ? secretToken.trim() : cachedConfig.secretToken || '',
       updatedAt: new Date().toISOString(),
     };
     saveConfigToDisk(cachedConfig);
@@ -439,6 +443,8 @@ function parseGVizResponse(text: string) {
     let colObs = '';
     let colAssinatura = '';
     let colFoto = '';
+    let colValorLitro = '';
+    let colValorTotal = '';
 
     if (hasDateCol || cells.length >= 12) {
       colNumero = getVal(0);
@@ -453,6 +459,8 @@ function parseGVizResponse(text: string) {
       colObs = getVal(9);
       colAssinatura = getVal(10);
       colFoto = getVal(11);
+      colValorLitro = getVal(12);
+      colValorTotal = getVal(13);
     } else {
       colNumero = getVal(0);
       colForma = getVal(1);
@@ -465,6 +473,8 @@ function parseGVizResponse(text: string) {
       colObs = getVal(8);
       colAssinatura = getVal(9);
       colFoto = getVal(10);
+      colValorLitro = getVal(11);
+      colValorTotal = getVal(12);
     }
 
     // Skip empty rows
@@ -486,6 +496,8 @@ function parseGVizResponse(text: string) {
       obs: colObs || '',
       assinaturaCliente: colAssinatura || '',
       driveFileUrl: colFoto || '',
+      valorLitro: colValorLitro || '',
+      valorTotal: colValorTotal || '',
       dataCriacao: new Date().toISOString(),
       statusEnvio: 'enviado_drive',
       statusMsg: 'Sincronizado da planilha Google Sheets',
@@ -539,6 +551,8 @@ function parseCSVRows(csvText: string) {
     let colObs = '';
     let colAssinatura = '';
     let colFoto = '';
+    let colValorLitro = '';
+    let colValorTotal = '';
 
     if (hasDateCol || cells.length >= 12) {
       colNumero = clean(0);
@@ -553,6 +567,8 @@ function parseCSVRows(csvText: string) {
       colObs = clean(9);
       colAssinatura = clean(10);
       colFoto = clean(11);
+      colValorLitro = clean(12);
+      colValorTotal = clean(13);
     } else {
       colNumero = clean(0);
       colForma = clean(1);
@@ -565,6 +581,8 @@ function parseCSVRows(csvText: string) {
       colObs = clean(8);
       colAssinatura = clean(9);
       colFoto = clean(10);
+      colValorLitro = clean(11);
+      colValorTotal = clean(12);
     }
 
     if (!colNumero && !colCliente && !colVolume) continue;
@@ -583,6 +601,8 @@ function parseCSVRows(csvText: string) {
       obs: colObs || '',
       assinaturaCliente: colAssinatura || '',
       driveFileUrl: colFoto || '',
+      valorLitro: colValorLitro || '',
+      valorTotal: colValorTotal || '',
       dataCriacao: new Date().toISOString(),
       statusEnvio: 'enviado_drive',
       statusMsg: 'Sincronizado via exportação da planilha',
@@ -734,6 +754,8 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
             obs: r.obs || r['Obs.:'] || r['Obs'] || '',
             assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
             driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
+            valorLitro: r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || '',
+            valorTotal: r.valorTotal || r['Valor Total'] || r['Total (R$)'] || '',
             dataCriacao: r.dataCriacao || new Date().toISOString(),
             statusEnvio: 'enviado_drive',
             statusMsg: 'Sincronizado da planilha Dados_Raizen',
@@ -790,6 +812,8 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
             obs: r.obs || r['Obs.:'] || r['Obs'] || '',
             assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
             driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
+            valorLitro: r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || '',
+            valorTotal: r.valorTotal || r['Valor Total'] || r['Total (R$)'] || '',
             dataCriacao: r.dataCriacao || new Date().toISOString(),
             statusEnvio: 'enviado_drive',
             statusMsg: 'Sincronizado da planilha Dados_Raizen',
@@ -826,7 +850,7 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
 // Endpoint to test Google Apps Script Webhook
 app.post('/api/test-google-integration', async (req, res) => {
   try {
-    const { webhookUrl } = req.body;
+    const { webhookUrl, secretToken } = req.body || {};
     const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
     if (!targetUrl) {
@@ -836,12 +860,20 @@ app.post('/api/test-google-integration', async (req, res) => {
       });
     }
 
-    const testPayload = {
+    const effectiveToken = (secretToken || cachedConfig.secretToken || '').trim();
+
+    const testPayload: any = {
       action: 'ping_test',
       timestamp: new Date().toISOString(),
     };
+    if (effectiveToken) {
+      testPayload.token = effectiveToken;
+    }
 
-    const response = await fetch(targetUrl, {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const testUrlWithToken = effectiveToken ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}` : targetUrl;
+
+    const response = await fetch(testUrlWithToken, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8',
@@ -884,10 +916,159 @@ app.post('/api/test-google-integration', async (req, res) => {
   }
 });
 
+// Endpoint to trigger Google Apps Script AI Robot on-demand
+app.post('/api/trigger-gas-processing', async (req, res) => {
+  try {
+    const { webhookUrl, secretToken } = req.body || {};
+    const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
+
+    if (!targetUrl) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'URL do Google Apps Script não informada.',
+      });
+    }
+
+    const effectiveToken = (secretToken || cachedConfig.secretToken || '').trim();
+    const payload: any = {
+      action: 'processar_agora',
+      timestamp: new Date().toISOString(),
+    };
+
+    if (effectiveToken) {
+      payload.token = effectiveToken;
+    }
+
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const targetUrlWithToken = effectiveToken ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}` : targetUrl;
+
+    console.log(`[Robô GAS] Acionando processamento sob demanda no Apps Script...`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutos para processar lote
+
+    const response = await fetch(targetUrlWithToken, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const responseText = await response.text();
+    let responseData: any;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      responseData = { raw: responseText };
+    }
+
+    const isSuccess = response.ok && responseData?.sucesso !== false;
+
+    res.json({
+      sucesso: isSuccess,
+      mensagem: responseData?.mensagem || (isSuccess ? 'Robô executado com sucesso!' : 'Falha ao acionar robô.'),
+      data: responseData,
+    });
+  } catch (error: any) {
+    console.error('Erro ao acionar robô Apps Script:', error);
+    res.json({
+      sucesso: false,
+      mensagem: `Erro ao acionar robô: ${error.message || 'Tempo limite esgotado'}`,
+    });
+  }
+});
+
+// Endpoint to update fuel price per liter and recalculate total value across date range and product
+app.post('/api/update-fuel-prices', async (req, res) => {
+  try {
+    const { webhookUrl, secretToken, dataInicio, dataFim, produto, valorLitro } = req.body || {};
+    const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
+
+    if (!targetUrl) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'URL do Google Apps Script não informada.',
+      });
+    }
+
+    const valorLitroNum = typeof valorLitro === 'number' ? valorLitro : parseFloat(String(valorLitro || 0).replace(',', '.'));
+    if (isNaN(valorLitroNum) || valorLitroNum < 0) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Valor do litro inválido.',
+      });
+    }
+
+    const effectiveToken = (secretToken || cachedConfig.secretToken || '').trim();
+    const payload: any = {
+      action: 'update_fuel_prices',
+      dataInicio: dataInicio || '',
+      dataFim: dataFim || dataInicio || '',
+      produto: produto || 'TODOS',
+      valorLitro: valorLitroNum,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (effectiveToken) {
+      payload.token = effectiveToken;
+    }
+
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const targetUrlWithToken = effectiveToken ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}` : targetUrl;
+
+    console.log(`[Update Prices] Enviando atualização de valor R$ ${valorLitroNum}/L para Apps Script (${payload.produto}, datas: ${payload.dataInicio || 'todas'} até ${payload.dataFim || 'todas'})...`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+    const response = await fetch(targetUrlWithToken, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const responseText = await response.text();
+    let responseData: any;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      responseData = { raw: responseText };
+    }
+
+    const isSuccess = response.ok && responseData?.sucesso !== false;
+
+    res.json({
+      sucesso: isSuccess,
+      mensagem: responseData?.mensagem || (isSuccess ? 'Valores atualizados na planilha com sucesso!' : 'Falha ao atualizar valores na planilha.'),
+      totalAtualizados: responseData?.totalAtualizados,
+      totalVolume: responseData?.totalVolume,
+      totalFinanceiro: responseData?.totalFinanceiro,
+      data: responseData,
+    });
+  } catch (error: any) {
+    console.error('Erro ao atualizar valores no Apps Script:', error);
+    res.json({
+      sucesso: false,
+      mensagem: `Erro ao atualizar valores: ${error.message || 'Falha de comunicação'}`,
+    });
+  }
+});
+
 // Endpoint proxy for Direct Google Apps Script upload (Direct front -> Drive)
 app.post('/api/upload-drive-proxy', async (req, res) => {
   try {
-    const { webhookUrl, payload } = req.body;
+    const { webhookUrl, payload, secretToken } = req.body || {};
     const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
 
     if (!targetUrl) {
@@ -904,32 +1085,64 @@ app.post('/api/upload-drive-proxy', async (req, res) => {
       });
     }
 
-    const response = await fetch(targetUrl, {
+    // Attach secret token if available in payload, body or server cached config
+    const effectiveToken = (payload.token || secretToken || cachedConfig.secretToken || '').trim();
+    if (effectiveToken) {
+      payload.token = effectiveToken;
+    }
+
+    // Build target URL with token param as well for maximum compatibility
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const uploadUrlWithToken = effectiveToken ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}` : targetUrl;
+
+    console.log(`[Upload Proxy] Enviando foto (${payload.fileName || 'sem_nome'}) para Google Apps Script com token: ${effectiveToken ? 'SIM' : 'NÃO'}`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000); // 35s timeout
+
+    const response = await fetch(uploadUrlWithToken, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8',
       },
       body: JSON.stringify(payload),
       redirect: 'follow',
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     const responseText = await response.text();
     let responseData: any;
     try {
       responseData = JSON.parse(responseText);
     } catch {
-      responseData = {
-        sucesso: response.ok,
-        mensagem: response.ok ? 'Foto enviada para a pasta do Google Drive com sucesso!' : responseText,
-      };
+      if (responseText.includes('Acesso não autorizado') || responseText.includes('Token')) {
+        responseData = {
+          sucesso: false,
+          mensagem: 'Acesso não autorizado pelo Google Apps Script. Verifique se o Token de Segurança está idêntico em Configurações e no script.',
+        };
+      } else {
+        responseData = {
+          sucesso: response.ok,
+          mensagem: response.ok ? 'Foto enviada para a pasta do Google Drive com sucesso!' : responseText,
+        };
+      }
+    }
+
+    if (responseData && responseData.sucesso === false) {
+      console.warn('[Upload Proxy] Resposta de insucesso do Apps Script:', responseData.mensagem);
     }
 
     res.json(responseData);
   } catch (error: any) {
     console.error('Erro no proxy para o Google Apps Script:', error);
+    const isTimeout = error.name === 'AbortError' || error.message?.includes('aborted');
     res.status(500).json({
       sucesso: false,
-      mensagem: `Erro ao conectar com Google Apps Script: ${error.message}`,
+      mensagem: isTimeout 
+        ? 'O envio demorou mais que o esperado (tempo limite). Verifique a conexão com o Google Apps Script.' 
+        : `Erro ao conectar com Google Apps Script: ${error.message}`,
     });
   }
 });

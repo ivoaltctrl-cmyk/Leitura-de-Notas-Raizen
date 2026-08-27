@@ -21,6 +21,9 @@ export interface AbastecimentoRecord {
   volume?: string;
   obs?: string;
   assinaturaCliente?: string;
+  // Financial fields (Colunas M e N na planilha):
+  valorLitro?: string; // ex: "5,89" ou "R$ 5,89"
+  valorTotal?: string; // ex: "1.319,36" ou "R$ 1.319,36" (volume * valorLitro)
 }
 
 export interface GasConfig {

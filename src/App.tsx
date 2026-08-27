@@ -71,19 +71,26 @@ export default function App() {
 
   const [previewRecord, setPreviewRecord] = useState<AbastecimentoRecord | null>(null);
 
-  // Load shared server configuration on startup (ensures all PCs, mobile devices, and incognito sessions share the webhook URL)
+  // Load shared server configuration on startup (ensures all PCs, mobile devices, and incognito sessions share the webhook URL and token)
   useEffect(() => {
     fetchGlobalConfig().then((serverConfig) => {
-      if (serverConfig && serverConfig.webhookUrl) {
+      if (serverConfig) {
         setGasConfig((prev) => ({
           ...prev,
           webhookUrl: serverConfig.webhookUrl || prev.webhookUrl,
-          secretToken: serverConfig.secretToken ?? prev.secretToken,
+          secretToken: serverConfig.secretToken !== undefined ? serverConfig.secretToken : prev.secretToken,
           autoUploadToDrive: serverConfig.autoUploadToDrive ?? prev.autoUploadToDrive,
         }));
-        try {
-          localStorage.setItem('sheets_webhook_url', serverConfig.webhookUrl);
-        } catch {}
+        if (serverConfig.webhookUrl) {
+          try {
+            localStorage.setItem('sheets_webhook_url', serverConfig.webhookUrl);
+          } catch {}
+        }
+        if (serverConfig.secretToken !== undefined) {
+          try {
+            localStorage.setItem('sheets_secret_token', serverConfig.secretToken);
+          } catch {}
+        }
       }
     });
   }, []);
@@ -112,7 +119,7 @@ export default function App() {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [gasConfig.webhookUrl]);
+  }, [gasConfig.webhookUrl, gasConfig.secretToken]);
 
   useEffect(() => {
     try {

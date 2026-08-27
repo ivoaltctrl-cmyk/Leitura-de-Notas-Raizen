@@ -3,18 +3,21 @@ import { AbastecimentoRecord } from '../types';
 
 /**
  * Exports data directly to native Excel (.xlsx) workbook with formatted headers and widths
- * Matching the exact columns of the official Raízen Google Sheet (A to K):
+ * Matching the exact columns of the official Raízen Google Sheet (A to N):
  * A: Número
- * B: Forma de Pagamento
- * C: Cliente
- * D: Hora da Chegada
- * E: Início do Abastecimento
- * F: Término do Abastecimento
- * G: Produto
- * H: Volume
- * I: Obs.:
- * J: Assinatura do Cliente
- * K: Foto da Nota
+ * B: Data do Abastecimento
+ * C: Forma de Pagamento
+ * D: Cliente
+ * E: Hora da Chegada
+ * F: Início do Abastecimento
+ * G: Término do Abastecimento
+ * H: Produto
+ * I: Volume
+ * J: Obs.:
+ * K: Assinatura do Cliente
+ * L: Foto da Nota
+ * M: Valor/Litro
+ * N: Valor Total
  */
 export function exportToExcelXLSX(records: AbastecimentoRecord[], filename: string = 'Dados_Raizen_Abastecimento.xlsx') {
   const data = records.map((r, idx) => ({
@@ -30,6 +33,8 @@ export function exportToExcelXLSX(records: AbastecimentoRecord[], filename: stri
     'Obs.:': r.obs || '-',
     'Assinatura do Cliente': r.assinaturaCliente || '-',
     'Foto da Nota': r.driveFileUrl || (r.driveFileId ? `https://drive.google.com/file/d/${r.driveFileId}/view` : (r.fileName || 'Foto Anexada')),
+    'Valor/Litro': r.valorLitro || '-',
+    'Valor Total': r.valorTotal || '-',
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(data);
@@ -48,6 +53,8 @@ export function exportToExcelXLSX(records: AbastecimentoRecord[], filename: stri
     { wch: 26 }, // J: Obs.:
     { wch: 24 }, // K: Assinatura do Cliente
     { wch: 40 }, // L: Foto da Nota
+    { wch: 16 }, // M: Valor/Litro
+    { wch: 18 }, // N: Valor Total
   ];
 
   const workbook = XLSX.utils.book_new();
@@ -72,6 +79,8 @@ export function exportToCSV(records: AbastecimentoRecord[], filename: string = '
     'Obs.:',
     'Assinatura do Cliente',
     'Foto da Nota',
+    'Valor/Litro',
+    'Valor Total',
   ];
 
   const rows = records.map((r, idx) => [
@@ -87,6 +96,8 @@ export function exportToCSV(records: AbastecimentoRecord[], filename: string = '
     `"${(r.obs || '-').replace(/"/g, '""')}"`,
     `"${(r.assinaturaCliente || '-').replace(/"/g, '""')}"`,
     `"${r.driveFileUrl || (r.driveFileId ? `https://drive.google.com/file/d/${r.driveFileId}/view` : (r.fileName || 'Foto Anexada'))}"`,
+    `"${r.valorLitro || '-'}"`,
+    `"${r.valorTotal || '-'}"`,
   ]);
 
   // Include UTF-8 BOM so Excel opens with correct Portuguese accents and semicolons
@@ -119,6 +130,8 @@ export function copyTableAsTSV(records: AbastecimentoRecord[]): Promise<boolean>
     'Obs.:',
     'Assinatura do Cliente',
     'Foto da Nota',
+    'Valor/Litro',
+    'Valor Total',
   ];
 
   const rows = records.map((r, idx) => [
@@ -134,6 +147,8 @@ export function copyTableAsTSV(records: AbastecimentoRecord[]): Promise<boolean>
     r.obs || '-',
     r.assinaturaCliente || '-',
     r.driveFileUrl || (r.driveFileId ? `https://drive.google.com/file/d/${r.driveFileId}/view` : (r.fileName || 'Foto Anexada')),
+    r.valorLitro || '-',
+    r.valorTotal || '-',
   ]);
 
   const tsvContent = [headers.join('\t'), ...rows.map((row) => row.join('\t'))].join('\n');
