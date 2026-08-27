@@ -1,6 +1,6 @@
 {
-  "name": "Gestão e Leitor de Pendências SST & Contratos",
-  "description": "Sistema inteligente de leitura OCR via IA para captura de fichas de funcionários (OS, ASO, EPI, Radioproteção), dashboard de conformidade, cobrança de responsáveis e monitoramento de contratos.",
-  "requestFramePermissions": [],
+  "name": "WFS - Envio de Comprovantes",
+  "description": "Controle de abastecimento WFS/Raízen com espelhamento da planilha Google Sheets (Dados_Raizen) e envio de comprovantes ao Google Drive.",
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
