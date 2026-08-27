@@ -415,8 +415,31 @@ function parseGVizResponse(text: string) {
   const cols = data.table.cols || [];
   const records: any[] = [];
 
-  const colLabels = cols.map((c: any) => String(c?.label || '').toLowerCase());
-  const hasDateCol = colLabels.some((l: string) => l.includes('data'));
+  const colLabels = cols.map((c: any) => String(c?.label || '').toLowerCase().trim());
+
+  function findCol(aliases: string[], fallbackIdx: number): number {
+    for (let c = 0; c < colLabels.length; c++) {
+      for (const a of aliases) {
+        if (colLabels[c].includes(a.toLowerCase())) return c;
+      }
+    }
+    return fallbackIdx;
+  }
+
+  const idxNumero = findCol(['número', 'numero', 'nro', 'os'], 0);
+  const idxData = findCol(['data do abastecimento', 'data abastecimento', 'data', 'dt'], 1);
+  const idxForma = findCol(['forma de pagamento', 'forma', 'pagamento', 'pagto'], 2);
+  const idxCliente = findCol(['cliente', 'empresa', 'razao'], 3);
+  const idxChegada = findCol(['hora da chegada', 'hora chegada', 'chegada'], 4);
+  const idxInicio = findCol(['início do abastecimento', 'inicio do abastecimento', 'início', 'inicio'], 5);
+  const idxTermino = findCol(['término do abastecimento', 'termino do abastecimento', 'término', 'termino', 'fim'], 6);
+  const idxProduto = findCol(['produto', 'combustível', 'combustivel'], 7);
+  const idxVolume = findCol(['volume', 'litros', 'quantidade', 'qtd'], 8);
+  const idxObs = findCol(['obs', 'observação', 'observacao', 'placa'], 9);
+  const idxAssinatura = findCol(['assinatura do cliente', 'assinatura', 'conferido'], 10);
+  const idxFoto = findCol(['foto da nota', 'foto', 'comprovante', 'link', 'drive'], 11);
+  const idxValorLitro = findCol(['valor/litro', 'valor litro', 'preço/litro', 'preco/litro', 'unitario', 'unitário'], 12);
+  const idxValorTotal = findCol(['valor total', 'vl total', 'total (r$)', 'total r$', 'total'], 13);
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -424,87 +447,69 @@ function parseGVizResponse(text: string) {
     const cells = row.c;
 
     const getVal = (idx: number): string => {
-      if (!cells[idx]) return '';
+      if (idx < 0 || idx >= cells.length || !cells[idx]) return '';
       const cell = cells[idx];
       if (cell.f !== undefined && cell.f !== null) return String(cell.f).trim();
       if (cell.v !== undefined && cell.v !== null) return String(cell.v).trim();
       return '';
     };
 
-    let colNumero = '';
-    let colData = '';
-    let colForma = '';
-    let colCliente = '';
-    let colChegada = '';
-    let colInicio = '';
-    let colTermino = '';
-    let colProduto = '';
-    let colVolume = '';
-    let colObs = '';
-    let colAssinatura = '';
-    let colFoto = '';
-    let colValorLitro = '';
-    let colValorTotal = '';
+    const colNumero = getVal(idxNumero);
+    const colData = getVal(idxData);
+    const colForma = getVal(idxForma) || 'CONTRATO';
+    const colCliente = getVal(idxCliente) || 'WFS / RAÍZEN';
+    const colChegada = getVal(idxChegada);
+    const colInicio = getVal(idxInicio);
+    const colTermino = getVal(idxTermino);
+    const colProduto = getVal(idxProduto) || 'DIESEL';
+    const colVolume = getVal(idxVolume) || '0,00';
+    const colObs = getVal(idxObs);
+    const colAssinatura = getVal(idxAssinatura);
+    const colFoto = getVal(idxFoto);
+    let colValorLitro = getVal(idxValorLitro);
+    let colValorTotal = getVal(idxValorTotal);
 
-    if (hasDateCol || cells.length >= 12) {
-      colNumero = getVal(0);
-      colData = getVal(1);
-      colForma = getVal(2);
-      colCliente = getVal(3);
-      colChegada = getVal(4);
-      colInicio = getVal(5);
-      colTermino = getVal(6);
-      colProduto = getVal(7);
-      colVolume = getVal(8);
-      colObs = getVal(9);
-      colAssinatura = getVal(10);
-      colFoto = getVal(11);
-      colValorLitro = getVal(12);
-      colValorTotal = getVal(13);
-    } else {
-      colNumero = getVal(0);
-      colForma = getVal(1);
-      colCliente = getVal(2);
-      colChegada = getVal(3);
-      colInicio = getVal(4);
-      colTermino = getVal(5);
-      colProduto = getVal(6);
-      colVolume = getVal(7);
-      colObs = getVal(8);
-      colAssinatura = getVal(9);
-      colFoto = getVal(10);
-      colValorLitro = getVal(11);
-      colValorTotal = getVal(12);
-    }
-
-    // Skip empty rows
+    // Skip empty rows and header row if returned as data
     if (!colNumero && !colCliente && !colVolume && !colProduto) continue;
-    // Skip header row if it matches column titles
     if (colNumero.toLowerCase() === 'número' || colNumero.toLowerCase() === 'numero' || colCliente.toLowerCase() === 'cliente') continue;
+
+    // Standardize currency format if present
+    if (colValorLitro) {
+      const num = parseFloat(colValorLitro.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(num) && num > 0 && !colValorLitro.includes('R$')) {
+        colValorLitro = `R$ ${num.toFixed(2).replace('.', ',')}`;
+      }
+    }
+    if (colValorTotal) {
+      const num = parseFloat(colValorTotal.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+      if (!isNaN(num) && num > 0 && !colValorTotal.includes('R$')) {
+        colValorTotal = `R$ ${num.toFixed(2).replace('.', ',')}`;
+      }
+    }
 
     records.push({
       id: `sheet-row-${i + 2}-${colNumero || i}`,
       numero: colNumero || `OS-${String(i + 1).padStart(4, '0')}`,
       dataAbastecimento: colData || '',
-      formaPagamento: colForma || 'CONTRATO',
-      cliente: colCliente || 'WFS / RAÍZEN',
-      horaChegada: colChegada || '',
-      inicioAbastecimento: colInicio || '',
-      terminoAbastecimento: colTermino || '',
-      produto: colProduto || 'DIESEL',
-      volume: colVolume || '0,00',
-      obs: colObs || '',
-      assinaturaCliente: colAssinatura || '',
-      driveFileUrl: colFoto || '',
-      valorLitro: colValorLitro || '',
-      valorTotal: colValorTotal || '',
+      formaPagamento: colForma,
+      cliente: colCliente,
+      horaChegada: colChegada,
+      inicioAbastecimento: colInicio,
+      terminoAbastecimento: colTermino,
+      produto: colProduto,
+      volume: colVolume,
+      obs: colObs,
+      assinaturaCliente: colAssinatura,
+      driveFileUrl: colFoto,
+      valorLitro: colValorLitro,
+      valorTotal: colValorTotal,
       dataCriacao: new Date().toISOString(),
       statusEnvio: 'enviado_drive',
       statusMsg: 'Sincronizado da planilha Google Sheets',
     });
   }
 
-  return records.reverse();
+  return records;
 }
 
 // Helper to parse CSV rows from Google Sheets
@@ -514,12 +519,37 @@ function parseCSVRows(csvText: string) {
 
   const records: any[] = [];
   const headerLine = lines[0].toLowerCase();
-  const hasDateCol = headerLine.includes('data');
+  
+  // Parse header line to determine column indices dynamically
+  const headerCells = lines[0].split(',').map((h) => h.replace(/^["']|["']$/g, '').trim().toLowerCase());
+  
+  function findCsvCol(aliases: string[], fallbackIdx: number): number {
+    for (let c = 0; c < headerCells.length; c++) {
+      for (const a of aliases) {
+        if (headerCells[c].includes(a.toLowerCase())) return c;
+      }
+    }
+    return fallbackIdx;
+  }
+
+  const idxNumero = findCsvCol(['número', 'numero', 'nro', 'os'], 0);
+  const idxData = findCsvCol(['data do abastecimento', 'data abastecimento', 'data', 'dt'], 1);
+  const idxForma = findCsvCol(['forma de pagamento', 'forma', 'pagamento', 'pagto'], 2);
+  const idxCliente = findCsvCol(['cliente', 'empresa', 'razao'], 3);
+  const idxChegada = findCsvCol(['hora da chegada', 'hora chegada', 'chegada'], 4);
+  const idxInicio = findCsvCol(['início do abastecimento', 'inicio do abastecimento', 'início', 'inicio'], 5);
+  const idxTermino = findCsvCol(['término do abastecimento', 'termino do abastecimento', 'término', 'termino', 'fim'], 6);
+  const idxProduto = findCsvCol(['produto', 'combustível', 'combustivel'], 7);
+  const idxVolume = findCsvCol(['volume', 'litros', 'quantidade', 'qtd'], 8);
+  const idxObs = findCsvCol(['obs', 'observação', 'observacao', 'placa'], 9);
+  const idxAssinatura = findCsvCol(['assinatura do cliente', 'assinatura', 'conferido'], 10);
+  const idxFoto = findCsvCol(['foto da nota', 'foto', 'comprovante', 'link', 'drive'], 11);
+  const idxValorLitro = findCsvCol(['valor/litro', 'valor litro', 'preço/litro', 'preco/litro', 'unitario', 'unitário'], 12);
+  const idxValorTotal = findCsvCol(['valor total', 'vl total', 'total (r$)', 'total r$', 'total'], 13);
 
   // Skip header (index 0)
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
-    // Simple CSV parser supporting quotes
     const cells: string[] = [];
     let insideQuote = false;
     let currentCell = '';
@@ -537,53 +567,22 @@ function parseCSVRows(csvText: string) {
     }
     cells.push(currentCell.trim());
 
-    const clean = (idx: number) => (cells[idx] || '').replace(/^["']|["']$/g, '').trim();
+    const clean = (idx: number) => (idx >= 0 && idx < cells.length ? (cells[idx] || '').replace(/^["']|["']$/g, '').trim() : '');
 
-    let colNumero = '';
-    let colData = '';
-    let colForma = '';
-    let colCliente = '';
-    let colChegada = '';
-    let colInicio = '';
-    let colTermino = '';
-    let colProduto = '';
-    let colVolume = '';
-    let colObs = '';
-    let colAssinatura = '';
-    let colFoto = '';
-    let colValorLitro = '';
-    let colValorTotal = '';
-
-    if (hasDateCol || cells.length >= 12) {
-      colNumero = clean(0);
-      colData = clean(1);
-      colForma = clean(2);
-      colCliente = clean(3);
-      colChegada = clean(4);
-      colInicio = clean(5);
-      colTermino = clean(6);
-      colProduto = clean(7);
-      colVolume = clean(8);
-      colObs = clean(9);
-      colAssinatura = clean(10);
-      colFoto = clean(11);
-      colValorLitro = clean(12);
-      colValorTotal = clean(13);
-    } else {
-      colNumero = clean(0);
-      colForma = clean(1);
-      colCliente = clean(2);
-      colChegada = clean(3);
-      colInicio = clean(4);
-      colTermino = clean(5);
-      colProduto = clean(6);
-      colVolume = clean(7);
-      colObs = clean(8);
-      colAssinatura = clean(9);
-      colFoto = clean(10);
-      colValorLitro = clean(11);
-      colValorTotal = clean(12);
-    }
+    const colNumero = clean(idxNumero);
+    const colData = clean(idxData);
+    const colForma = clean(idxForma) || 'CONTRATO';
+    const colCliente = clean(idxCliente) || 'WFS / RAÍZEN';
+    const colChegada = clean(idxChegada);
+    const colInicio = clean(idxInicio);
+    const colTermino = clean(idxTermino);
+    const colProduto = clean(idxProduto) || 'DIESEL';
+    const colVolume = clean(idxVolume) || '0,00';
+    const colObs = clean(idxObs);
+    const colAssinatura = clean(idxAssinatura);
+    const colFoto = clean(idxFoto);
+    let colValorLitro = clean(idxValorLitro);
+    let colValorTotal = clean(idxValorTotal);
 
     if (!colNumero && !colCliente && !colVolume) continue;
 
@@ -591,25 +590,25 @@ function parseCSVRows(csvText: string) {
       id: `csv-row-${i + 1}-${colNumero || i}`,
       numero: colNumero || `OS-${String(i).padStart(4, '0')}`,
       dataAbastecimento: colData || '',
-      formaPagamento: colForma || 'CONTRATO',
-      cliente: colCliente || 'WFS / RAÍZEN',
-      horaChegada: colChegada || '',
-      inicioAbastecimento: colInicio || '',
-      terminoAbastecimento: colTermino || '',
-      produto: colProduto || 'DIESEL',
-      volume: colVolume || '0,00',
-      obs: colObs || '',
-      assinaturaCliente: colAssinatura || '',
-      driveFileUrl: colFoto || '',
-      valorLitro: colValorLitro || '',
-      valorTotal: colValorTotal || '',
+      formaPagamento: colForma,
+      cliente: colCliente,
+      horaChegada: colChegada,
+      inicioAbastecimento: colInicio,
+      terminoAbastecimento: colTermino,
+      produto: colProduto,
+      volume: colVolume,
+      obs: colObs,
+      assinaturaCliente: colAssinatura,
+      driveFileUrl: colFoto,
+      valorLitro: colValorLitro,
+      valorTotal: colValorTotal,
       dataCriacao: new Date().toISOString(),
       statusEnvio: 'enviado_drive',
       statusMsg: 'Sincronizado via exportação da planilha',
     });
   }
 
-  return records.reverse();
+  return records;
 }
 
 // Endpoint to fetch real rows directly from Google Sheets via Google Apps Script or Google Sheets URL
@@ -739,27 +738,79 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
         const gasJson = JSON.parse(gasText);
         const recordsList = gasJson.records || gasJson.dados || gasJson.data || (Array.isArray(gasJson) ? gasJson : null);
         if (recordsList && Array.isArray(recordsList)) {
-          // Standardize record format
-          const formattedRecords = recordsList.map((r: any, idx: number) => ({
-            id: r.id || `sheet-row-${idx + 1}`,
-            numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
-            dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
-            formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
-            cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
-            horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
-            inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
-            terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
-            produto: r.produto || r['Produto'] || 'DIESEL',
-            volume: r.volume || r['Volume'] || '0,00',
-            obs: r.obs || r['Obs.:'] || r['Obs'] || '',
-            assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
-            driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
-            valorLitro: r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || '',
-            valorTotal: r.valorTotal || r['Valor Total'] || r['Total (R$)'] || '',
-            dataCriacao: r.dataCriacao || new Date().toISOString(),
-            statusEnvio: 'enviado_drive',
-            statusMsg: 'Sincronizado da planilha Dados_Raizen',
-          }));
+          const formattedRecords = recordsList.map((r: any, idx: number) => {
+            const findKey = (aliases: string[]): string => {
+              for (const k of Object.keys(r)) {
+                const kLower = k.toLowerCase().replace(/[\s_\/-]/g, '');
+                for (const a of aliases) {
+                  const aLower = a.toLowerCase().replace(/[\s_\/-]/g, '');
+                  if (kLower === aLower || kLower.includes(aLower)) {
+                    if (r[k] !== undefined && r[k] !== null && r[k] !== '') return String(r[k]).trim();
+                  }
+                }
+              }
+              return '';
+            };
+
+            const num = findKey(['numero', 'número', 'nro', 'os']) || `OS-${String(idx + 1).padStart(4, '0')}`;
+            const dt = findKey(['data', 'dataabastecimento', 'datadoabastecimento', 'dt']);
+            const forma = findKey(['forma', 'formadepagamento', 'pagamento', 'pagto']) || 'CONTRATO';
+            const cli = findKey(['cliente', 'empresa', 'razao', 'razãosocial']) || 'WFS / RAÍZEN';
+            const chegada = findKey(['chegada', 'horadachegada', 'horachegada']);
+            const ini = findKey(['inicio', 'início', 'iníciodoabastecimento', 'iniciodoabastecimento']);
+            const ter = findKey(['termino', 'término', 'términodoabastecimento', 'terminodoabastecimento']);
+            const prod = findKey(['produto', 'combustivel', 'combustível']) || 'DIESEL';
+            const vol = findKey(['volume', 'litros', 'litro', 'quantidade', 'qtd']) || '0,00';
+            const obs = findKey(['obs', 'observacao', 'observação', 'placa']);
+            const ass = findKey(['assinatura', 'assinaturadocliente', 'conferido']);
+            const foto = findKey(['foto', 'fotodanota', 'drive', 'drivefileurl', 'link']);
+            let vLitro = findKey(['valorlitro', 'valor/litro', 'precolitro', 'preço/litro', 'unitario', 'unitário', 'litro']);
+            let vTotal = findKey(['valortotal', 'totalrs', 'total(r$)', 'vltotal', 'total']);
+
+            if (vLitro) {
+              const numVal = parseFloat(vLitro.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+              if (!isNaN(numVal) && numVal > 0 && !vLitro.includes('R$')) {
+                vLitro = `R$ ${numVal.toFixed(2).replace('.', ',')}`;
+              }
+            }
+
+            if (vTotal) {
+              const numTot = parseFloat(vTotal.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+              if (!isNaN(numTot) && numTot > 0 && !vTotal.includes('R$')) {
+                vTotal = `R$ ${numTot.toFixed(2).replace('.', ',')}`;
+              }
+            }
+
+            // If valorLitro exists and volume exists, but valorTotal is missing or zero, compute it
+            const volNum = parseFloat(vol.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+            const precoNum = parseFloat(vLitro.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+            if (!isNaN(volNum) && volNum > 0 && !isNaN(precoNum) && precoNum > 0) {
+              if (!vTotal || vTotal === 'R$ 0,00' || vTotal === '0') {
+                vTotal = `R$ ${(Math.round(volNum * precoNum * 100) / 100).toFixed(2).replace('.', ',')}`;
+              }
+            }
+
+            return {
+              id: r.id || `sheet-row-${idx + 1}`,
+              numero: num,
+              dataAbastecimento: dt,
+              formaPagamento: forma,
+              cliente: cli,
+              horaChegada: chegada,
+              inicioAbastecimento: ini,
+              terminoAbastecimento: ter,
+              produto: prod,
+              volume: vol,
+              obs: obs,
+              assinaturaCliente: ass,
+              driveFileUrl: foto,
+              valorLitro: vLitro,
+              valorTotal: vTotal,
+              dataCriacao: r.dataCriacao || new Date().toISOString(),
+              statusEnvio: 'enviado_drive',
+              statusMsg: 'Sincronizado da planilha Dados_Raizen',
+            };
+          });
 
           return res.json({
             sucesso: true,
@@ -798,26 +849,79 @@ app.post('/api/fetch-sheet-records', async (req, res) => {
         const postJson = JSON.parse(postText);
         const recordsList = postJson.records || postJson.dados || postJson.data || (Array.isArray(postJson) ? postJson : null);
         if (recordsList && Array.isArray(recordsList)) {
-          const formattedRecords = recordsList.map((r: any, idx: number) => ({
-            id: r.id || `sheet-row-${idx + 1}`,
-            numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
-            dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
-            formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
-            cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
-            horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
-            inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
-            terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
-            produto: r.produto || r['Produto'] || 'DIESEL',
-            volume: r.volume || r['Volume'] || '0,00',
-            obs: r.obs || r['Obs.:'] || r['Obs'] || '',
-            assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
-            driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
-            valorLitro: r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || '',
-            valorTotal: r.valorTotal || r['Valor Total'] || r['Total (R$)'] || '',
-            dataCriacao: r.dataCriacao || new Date().toISOString(),
-            statusEnvio: 'enviado_drive',
-            statusMsg: 'Sincronizado da planilha Dados_Raizen',
-          }));
+          const formattedRecords = recordsList.map((r: any, idx: number) => {
+            const findKey = (aliases: string[]): string => {
+              for (const k of Object.keys(r)) {
+                const kLower = k.toLowerCase().replace(/[\s_\/-]/g, '');
+                for (const a of aliases) {
+                  const aLower = a.toLowerCase().replace(/[\s_\/-]/g, '');
+                  if (kLower === aLower || kLower.includes(aLower)) {
+                    if (r[k] !== undefined && r[k] !== null && r[k] !== '') return String(r[k]).trim();
+                  }
+                }
+              }
+              return '';
+            };
+
+            const num = findKey(['numero', 'número', 'nro', 'os']) || `OS-${String(idx + 1).padStart(4, '0')}`;
+            const dt = findKey(['data', 'dataabastecimento', 'datadoabastecimento', 'dt']);
+            const forma = findKey(['forma', 'formadepagamento', 'pagamento', 'pagto']) || 'CONTRATO';
+            const cli = findKey(['cliente', 'empresa', 'razao', 'razãosocial']) || 'WFS / RAÍZEN';
+            const chegada = findKey(['chegada', 'horadachegada', 'horachegada']);
+            const ini = findKey(['inicio', 'início', 'iníciodoabastecimento', 'iniciodoabastecimento']);
+            const ter = findKey(['termino', 'término', 'términodoabastecimento', 'terminodoabastecimento']);
+            const prod = findKey(['produto', 'combustivel', 'combustível']) || 'DIESEL';
+            const vol = findKey(['volume', 'litros', 'litro', 'quantidade', 'qtd']) || '0,00';
+            const obs = findKey(['obs', 'observacao', 'observação', 'placa']);
+            const ass = findKey(['assinatura', 'assinaturadocliente', 'conferido']);
+            const foto = findKey(['foto', 'fotodanota', 'drive', 'drivefileurl', 'link']);
+            let vLitro = findKey(['valorlitro', 'valor/litro', 'precolitro', 'preço/litro', 'unitario', 'unitário', 'litro']);
+            let vTotal = findKey(['valortotal', 'totalrs', 'total(r$)', 'vltotal', 'total']);
+
+            if (vLitro) {
+              const numVal = parseFloat(vLitro.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+              if (!isNaN(numVal) && numVal > 0 && !vLitro.includes('R$')) {
+                vLitro = `R$ ${numVal.toFixed(2).replace('.', ',')}`;
+              }
+            }
+
+            if (vTotal) {
+              const numTot = parseFloat(vTotal.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+              if (!isNaN(numTot) && numTot > 0 && !vTotal.includes('R$')) {
+                vTotal = `R$ ${numTot.toFixed(2).replace('.', ',')}`;
+              }
+            }
+
+            // If valorLitro exists and volume exists, but valorTotal is missing or zero, compute it
+            const volNum = parseFloat(vol.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+            const precoNum = parseFloat(vLitro.replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.'));
+            if (!isNaN(volNum) && volNum > 0 && !isNaN(precoNum) && precoNum > 0) {
+              if (!vTotal || vTotal === 'R$ 0,00' || vTotal === '0') {
+                vTotal = `R$ ${(Math.round(volNum * precoNum * 100) / 100).toFixed(2).replace('.', ',')}`;
+              }
+            }
+
+            return {
+              id: r.id || `sheet-row-${idx + 1}`,
+              numero: num,
+              dataAbastecimento: dt,
+              formaPagamento: forma,
+              cliente: cli,
+              horaChegada: chegada,
+              inicioAbastecimento: ini,
+              terminoAbastecimento: ter,
+              produto: prod,
+              volume: vol,
+              obs: obs,
+              assinaturaCliente: ass,
+              driveFileUrl: foto,
+              valorLitro: vLitro,
+              valorTotal: vTotal,
+              dataCriacao: r.dataCriacao || new Date().toISOString(),
+              statusEnvio: 'enviado_drive',
+              statusMsg: 'Sincronizado da planilha Dados_Raizen',
+            };
+          });
 
           return res.json({
             sucesso: true,

@@ -248,7 +248,36 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
     try {
       const result = await fetchRecordsFromSheet(gasConfig.webhookUrl, gasConfig.sheetUrl, gasConfig.secretToken);
       if (result.sucesso && Array.isArray(result.records)) {
-        onSetRecords(result.records);
+        // Smart merge with existing records in state to preserve valorLitro and valorTotal
+        const prevMap = new Map<string, AbastecimentoRecord>();
+        records.forEach((r) => {
+          if (r.id) prevMap.set(r.id, r);
+          if (r.numero) prevMap.set(r.numero, r);
+        });
+
+        const merged = result.records.map((newR) => {
+          const prevMatch = (newR.id && prevMap.get(newR.id)) || (newR.numero && prevMap.get(newR.numero));
+          const precoLitro = newR.valorLitro || prevMatch?.valorLitro || '';
+          const volStr = newR.volume || prevMatch?.volume || '0,00';
+          let valorTotal = newR.valorTotal || prevMatch?.valorTotal || '';
+
+          const precoNum = parseCurrencyFloat(precoLitro);
+          const volNum = parseVolumeFloat(volStr);
+          const totalNum = parseCurrencyFloat(valorTotal);
+
+          if (precoNum > 0 && volNum > 0 && (!valorTotal || totalNum === 0)) {
+            valorTotal = formatCurrencyBRL(volNum * precoNum);
+          }
+
+          return {
+            ...(prevMatch || {}),
+            ...newR,
+            valorLitro: precoLitro,
+            valorTotal: valorTotal,
+          };
+        });
+
+        onSetRecords(merged);
 
         if (result.records.length > 0) {
           setSyncStatus({

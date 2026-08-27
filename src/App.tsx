@@ -7,6 +7,7 @@ import { ReceiptPreviewModal } from './components/ReceiptPreviewModal';
 import { AbastecimentoRecord, GasConfig } from './types';
 import { INITIAL_RECORDS } from './data/sampleReceipts';
 import { fetchRecordsFromSheet, fetchGlobalConfig, saveGlobalConfig } from './utils/driveService';
+import { parseCurrencyFloat, parseVolumeFloat, formatCurrencyBRL } from './utils/dateUtils';
 
 const STORAGE_KEY_RECORDS = 'abastecimento_records_v1';
 const STORAGE_KEY_CONFIG = 'abastecimento_gas_config_v1';
@@ -105,7 +106,36 @@ export default function App() {
       try {
         const result = await fetchRecordsFromSheet(urlToUse, undefined, gasConfig.secretToken);
         if (!cancelled && result.sucesso && Array.isArray(result.records)) {
-          setRecords(result.records);
+          setRecords((prevRecords) => {
+            const prevMap = new Map<string, AbastecimentoRecord>();
+            prevRecords.forEach((r) => {
+              if (r.id) prevMap.set(r.id, r);
+              if (r.numero) prevMap.set(r.numero, r);
+            });
+
+            return result.records.map((newR) => {
+              const prevMatch = (newR.id && prevMap.get(newR.id)) || (newR.numero && prevMap.get(newR.numero));
+              const precoLitro = newR.valorLitro || prevMatch?.valorLitro || '';
+              const volStr = newR.volume || prevMatch?.volume || '0,00';
+              let valorTotal = newR.valorTotal || prevMatch?.valorTotal || '';
+
+              // Calculate total if price and volume exist but total is blank
+              const precoNum = parseCurrencyFloat(precoLitro);
+              const volNum = parseVolumeFloat(volStr);
+              const totalNum = parseCurrencyFloat(valorTotal);
+
+              if (precoNum > 0 && volNum > 0 && (!valorTotal || totalNum === 0)) {
+                valorTotal = formatCurrencyBRL(volNum * precoNum);
+              }
+
+              return {
+                ...(prevMatch || {}),
+                ...newR,
+                valorLitro: precoLitro,
+                valorTotal: valorTotal,
+              };
+            });
+          });
         }
       } catch (e) {
         console.error('Erro ao sincronizar registros compartilhados:', e);

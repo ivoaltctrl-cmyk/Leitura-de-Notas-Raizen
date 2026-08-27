@@ -247,9 +247,22 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
   const normalizeRecords = (list: any[]): AbastecimentoRecord[] => {
     if (!Array.isArray(list)) return [];
     return list.map((r: any, idx: number) => {
-      const volRaw = r.volume || r['Volume'] || r['volume'] || '0,00';
-      const precoLitroRaw = r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || r['Preço/Litro'] || r.precoLitro || '';
-      let totalRaw = r.valorTotal || r['Valor Total'] || r['Total (R$)'] || r.total || '';
+      const findVal = (aliases: string[]): any => {
+        for (const k of Object.keys(r)) {
+          const kLower = k.toLowerCase().replace(/[\s_\/-]/g, '');
+          for (const a of aliases) {
+            const aLower = a.toLowerCase().replace(/[\s_\/-]/g, '');
+            if (kLower === aLower || kLower.includes(aLower)) {
+              if (r[k] !== undefined && r[k] !== null && r[k] !== '') return r[k];
+            }
+          }
+        }
+        return '';
+      };
+
+      const volRaw = findVal(['volume', 'litros', 'litro', 'quantidade', 'qtd']) || '0,00';
+      const precoLitroRaw = findVal(['valorlitro', 'valor/litro', 'precolitro', 'preço/litro', 'unitario', 'unitário', 'litro']);
+      let totalRaw = findVal(['valortotal', 'totalrs', 'total(r$)', 'vltotal', 'total']);
 
       const volNum = parseVolumeFloat(volRaw);
       const precoNum = parseCurrencyFloat(precoLitroRaw);
@@ -262,23 +275,25 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
         }
       }
 
+      const numVal = findVal(['numero', 'número', 'nro', 'os']) || `OS-${String(idx + 1).padStart(4, '0')}`;
+
       return {
-        id: r.id || `sheet-row-${idx + 1}-${r.numero || r['Número'] || idx}`,
-        numero: r.numero || r['Número'] || r.Numero || `OS-${String(idx + 1).padStart(4, '0')}`,
-        dataAbastecimento: r.dataAbastecimento || r.data || r['Data do Abastecimento'] || r['Data'] || '',
-        formaPagamento: r.formaPagamento || r['Forma de Pagamento'] || 'CONTRATO',
-        cliente: r.cliente || r['Cliente'] || 'WFS / RAÍZEN',
-        horaChegada: r.horaChegada || r['Hora da Chegada'] || '',
-        inicioAbastecimento: r.inicioAbastecimento || r['Início do Abastecimento'] || r['Inicio do Abastecimento'] || '',
-        terminoAbastecimento: r.terminoAbastecimento || r['Término do Abastecimento'] || r['Termino do Abastecimento'] || '',
-        produto: r.produto || r['Produto'] || 'DIESEL',
+        id: r.id || `sheet-row-${idx + 1}-${numVal}`,
+        numero: numVal,
+        dataAbastecimento: findVal(['data', 'dataabastecimento', 'datadoabastecimento', 'dt']),
+        formaPagamento: findVal(['forma', 'formadepagamento', 'pagamento', 'pagto']) || 'CONTRATO',
+        cliente: findVal(['cliente', 'empresa', 'razao']) || 'WFS / RAÍZEN',
+        horaChegada: findVal(['chegada', 'horadachegada', 'horachegada']),
+        inicioAbastecimento: findVal(['inicio', 'início', 'iníciodoabastecimento', 'iniciodoabastecimento']),
+        terminoAbastecimento: findVal(['termino', 'término', 'términodoabastecimento', 'terminodoabastecimento']),
+        produto: findVal(['produto', 'combustivel', 'combustível']) || 'DIESEL',
         volume: volRaw,
-        obs: r.obs || r['Obs.:'] || r['Obs'] || '',
-        assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
-        driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
+        obs: findVal(['obs', 'observacao', 'observação', 'placa']),
+        assinaturaCliente: findVal(['assinatura', 'assinaturadocliente', 'conferido']),
+        driveFileUrl: findVal(['foto', 'fotodanota', 'drive', 'drivefileurl', 'link']),
         valorLitro: precoNum > 0 ? (String(precoLitroRaw).includes('R$') ? String(precoLitroRaw) : formatCurrencyBRL(precoNum)) : '',
         valorTotal: totalRaw ? (String(totalRaw).includes('R$') ? String(totalRaw) : formatCurrencyBRL(parseCurrencyFloat(totalRaw))) : '',
-        fileName: r.fileName || (r.numero ? `Comprovante_${r.numero}.jpg` : `Registro_${idx + 1}.jpg`),
+        fileName: r.fileName || (numVal ? `Comprovante_${numVal}.jpg` : `Registro_${idx + 1}.jpg`),
         dataCriacao: r.dataCriacao || new Date().toISOString(),
         statusEnvio: 'enviado_drive',
         statusMsg: 'Sincronizado da planilha Dados_Raizen',
