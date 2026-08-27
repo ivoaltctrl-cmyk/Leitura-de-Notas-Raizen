@@ -261,21 +261,59 @@ function atualizarPrecosCombustivel(data) {
     var dataInicioStr = data.dataInicio ? String(data.dataInicio).trim() : "";
     var dataFimStr = data.dataFim ? String(data.dataFim).trim() : dataInicioStr;
 
-    function parseDateGAS(dStr) {
-      if (!dStr) return null;
-      var str = String(dStr).trim();
-      var br = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})/);
-      if (br) {
-        var y = parseInt(br[3], 10);
-        if (y < 100) y += 2000;
-        return new Date(y, parseInt(br[2], 10) - 1, parseInt(br[1], 10), 12, 0, 0);
+    // Parser de data ultra-robusto (funciona com DD/MM/YYYY, YYYY-MM-DD e objetos Date sem depender de regex)
+    function parseDateGAS(dInput) {
+      if (!dInput) return null;
+      if (Object.prototype.toString.call(dInput) === '[object Date]') {
+        return isNaN(dInput.getTime()) ? null : new Date(dInput.getFullYear(), dInput.getMonth(), dInput.getDate(), 12, 0, 0);
       }
-      var iso = str.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
-      if (iso) {
-        return new Date(parseInt(iso[1], 10), parseInt(iso[2], 10) - 1, parseInt(iso[3], 10), 12, 0, 0);
+      var str = String(dInput).trim();
+      if (!str) return null;
+
+      // Normaliza separadores
+      var cleanStr = str.split('-').join('/').split('.').join('/');
+      var parts = cleanStr.split('/');
+
+      if (parts.length >= 3) {
+        var p0 = parseInt(parts[0], 10);
+        var p1 = parseInt(parts[1], 10);
+        var p2 = parseInt(parts[2], 10);
+
+        if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+          // Formato YYYY/MM/DD
+          if (p0 > 1000) {
+            return new Date(p0, p1 - 1, p2, 12, 0, 0);
+          }
+          // Formato DD/MM/YYYY
+          if (p2 < 100) p2 += 2000;
+          return new Date(p2, p1 - 1, p0, 12, 0, 0);
+        }
       }
+
       var f = new Date(str);
       return isNaN(f.getTime()) ? null : new Date(f.getFullYear(), f.getMonth(), f.getDate(), 12, 0, 0);
+    }
+
+    // Parser numérico ultra-robusto sem regex frágil
+    function parseNumberGAS(val) {
+      if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      if (!val) return 0;
+      var str = String(val).trim();
+      var digitsOnly = "";
+      for (var i = 0; i < str.length; i++) {
+        var ch = str.charAt(i);
+        if ((ch >= '0' && ch <= '9') || ch === ',' || ch === '.') {
+          digitsOnly += ch;
+        }
+      }
+      if (!digitsOnly) return 0;
+      if (digitsOnly.indexOf(',') !== -1 && digitsOnly.indexOf('.') !== -1) {
+        digitsOnly = digitsOnly.split('.').join('').replace(',', '.');
+      } else if (digitsOnly.indexOf(',') !== -1) {
+        digitsOnly = digitsOnly.replace(',', '.');
+      }
+      var num = parseFloat(digitsOnly);
+      return isNaN(num) ? 0 : num;
     }
 
     var dateInicio = parseDateGAS(dataInicioStr);
@@ -295,6 +333,9 @@ function atualizarPrecosCombustivel(data) {
       var rawVol = rowRaw[idxVolume];
       var dispVol = rowDisp[idxVolume];
 
+      // Linhas totalmente vazias são ignoradas
+      if (!rowDataStr && !dispVol && !rowDisp[0]) continue;
+
       // Valida filtro de combustível
       if (filtroProduto !== "TODOS" && rowProdStr.indexOf(filtroProduto) === -1 && filtroProduto.indexOf(rowProdStr) === -1) {
         continue;
@@ -302,35 +343,21 @@ function atualizarPrecosCombustivel(data) {
 
       // Valida intervalo de datas
       if (dateInicio || dateFim) {
-        var rowDate = parseDateGAS(rowDataStr);
-        if (!rowDate) continue;
-
-        if (dateInicio) {
-          var startTime = new Date(dateInicio.getFullYear(), dateInicio.getMonth(), dateInicio.getDate(), 0, 0, 0).getTime();
-          if (rowDate.getTime() < startTime) continue;
-        }
-        if (dateFim) {
-          var endTime = new Date(dateFim.getFullYear(), dateFim.getMonth(), dateFim.getDate(), 23, 59, 59).getTime();
-          if (rowDate.getTime() > endTime) continue;
+        var rowDate = parseDateGAS(rowDataStr) || (Object.prototype.toString.call(rawValues[r][idxData]) === '[object Date]' ? parseDateGAS(rawValues[r][idxData]) : null);
+        if (rowDate) {
+          if (dateInicio) {
+            var startTime = new Date(dateInicio.getFullYear(), dateInicio.getMonth(), dateInicio.getDate(), 0, 0, 0).getTime();
+            if (rowDate.getTime() < startTime) continue;
+          }
+          if (dateFim) {
+            var endTime = new Date(dateFim.getFullYear(), dateFim.getMonth(), dateFim.getDate(), 23, 59, 59).getTime();
+            if (rowDate.getTime() > endTime) continue;
+          }
         }
       }
 
       // Extração precisa e segura do Volume
-      var volNum = 0;
-      if (typeof rawVol === 'number' && !isNaN(rawVol) && rawVol > 0) {
-        volNum = rawVol;
-      } else {
-        var vStr = String(dispVol || rawVol || "0").trim();
-        vStr = vStr.replace(/[^\d,\.-]/g, '');
-        if (vStr.indexOf(',') !== -1 && vStr.indexOf('.') !== -1) {
-          vStr = vStr.replace(/\./g, '').replace(',', '.');
-        } else if (vStr.indexOf(',') !== -1) {
-          vStr = vStr.replace(',', '.');
-        }
-        volNum = parseFloat(vStr);
-        if (isNaN(volNum)) volNum = 0;
-      }
-
+      var volNum = parseNumberGAS(rawVol) || parseNumberGAS(dispVol);
       var valorTotalRow = Math.round(volNum * valorLitroNum * 100) / 100;
 
       // Grava nas Colunas M (Valor/Litro) e N (Valor Total)
@@ -346,7 +373,7 @@ function atualizarPrecosCombustivel(data) {
 
     return {
       sucesso: true,
-      mensagem: "Preços atualizados com sucesso em " + updatedCount + " linha(s) da planilha Dados_Raizen!",
+      mensagem: "Preços gravados com sucesso em " + updatedCount + " linha(s) da planilha Dados_Raizen!",
       totalAtualizados: updatedCount,
       totalVolume: totalVolumeAtualizado,
       totalFinanceiro: totalFinanceiroAtualizado
@@ -375,13 +402,16 @@ function lerRegistrosPlanilha() {
     var sheet = ss.getSheetByName(NOME_ABA);
     if (!sheet) return [];
 
-    // Pega todos os dados já formatados como exibidos na célula
-    var data = sheet.getDataRange().getDisplayValues();
-    if (data.length <= 1) return []; // Retorna vazio se só houver o cabeçalho ou estiver vazia
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return [];
+
+    var lastCol = Math.max(sheet.getLastColumn(), 14);
+    var fullRange = sheet.getRange(1, 1, lastRow, lastCol);
+    var data = fullRange.getDisplayValues();
+    if (!data || data.length <= 1) return [];
 
     var header = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
     
-    // Mapeamento dinâmico de índices por nome do cabeçalho
     function getIdx(aliases, defaultIdx) {
       for (var i = 0; i < header.length; i++) {
         for (var a = 0; a < aliases.length; a++) {
@@ -392,51 +422,76 @@ function lerRegistrosPlanilha() {
     }
 
     var idxNumero = getIdx(["número", "numero", "nro", "os"], 0);
-    var idxData = getIdx(["data do abastecimento", "data abastecimento", "data"], -1);
-    var idxForma = getIdx(["forma de pagamento", "forma", "pagamento", "pagto"], idxData === 1 ? 2 : 1);
-    var idxCliente = getIdx(["cliente", "empresa", "razao"], idxData === 1 ? 3 : 2);
-    var idxChegada = getIdx(["hora da chegada", "hora chegada", "chegada"], idxData === 1 ? 4 : 3);
-    var idxInicio = getIdx(["início do abastecimento", "inicio do abastecimento", "início", "inicio"], idxData === 1 ? 5 : 4);
-    var idxTermino = getIdx(["término do abastecimento", "termino do abastecimento", "término", "termino", "fim"], idxData === 1 ? 6 : 5);
-    var idxProduto = getIdx(["produto", "combustível", "combustivel"], idxData === 1 ? 7 : 6);
-    var idxVolume = getIdx(["volume", "litros", "quantidade", "qtd"], idxData === 1 ? 8 : 7);
-    var idxObs = getIdx(["obs", "observação", "observacao", "placa"], idxData === 1 ? 9 : 8);
-    var idxAssinatura = getIdx(["assinatura do cliente", "assinatura", "conferido"], idxData === 1 ? 10 : 9);
-    var idxFoto = getIdx(["foto da nota", "foto", "comprovante", "link", "drive"], idxData === 1 ? 11 : 10);
+    var idxData = getIdx(["data do abastecimento", "data abastecimento", "data"], 1);
+    var idxForma = getIdx(["forma de pagamento", "forma", "pagamento", "pagto"], 2);
+    var idxCliente = getIdx(["cliente", "empresa", "razao"], 3);
+    var idxChegada = getIdx(["hora da chegada", "hora chegada", "chegada"], 4);
+    var idxInicio = getIdx(["início do abastecimento", "inicio do abastecimento", "início", "inicio"], 5);
+    var idxTermino = getIdx(["término do abastecimento", "termino do abastecimento", "término", "termino", "fim"], 6);
+    var idxProduto = getIdx(["produto", "combustível", "combustivel"], 7);
+    var idxVolume = getIdx(["volume", "litros", "quantidade", "qtd"], 8);
+    var idxObs = getIdx(["obs", "observação", "observacao", "placa"], 9);
+    var idxAssinatura = getIdx(["assinatura do cliente", "assinatura", "conferido"], 10);
+    var idxFoto = getIdx(["foto da nota", "foto", "comprovante", "link", "drive"], 11);
     var idxValorLitro = getIdx(["valor/litro", "valor litro", "preço/litro", "preco/litro", "unitario", "unitário"], 12);
-    var idxValorTotal = getIdx(["valor total", "total (r$)", "total r$", "total"], 13);
+    var idxValorTotal = getIdx(["valor total", "vl total", "total (r$)", "total r$", "total"], 13);
+
+    function parseNumClean(val) {
+      if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      if (!val) return 0;
+      var str = String(val).trim();
+      var digitsOnly = "";
+      for (var i = 0; i < str.length; i++) {
+        var ch = str.charAt(i);
+        if ((ch >= '0' && ch <= '9') || ch === ',' || ch === '.') {
+          digitsOnly += ch;
+        }
+      }
+      if (!digitsOnly) return 0;
+      if (digitsOnly.indexOf(',') !== -1 && digitsOnly.indexOf('.') !== -1) {
+        digitsOnly = digitsOnly.split('.').join('').replace(',', '.');
+      } else if (digitsOnly.indexOf(',') !== -1) {
+        digitsOnly = digitsOnly.replace(',', '.');
+      }
+      var num = parseFloat(digitsOnly);
+      return isNaN(num) ? 0 : num;
+    }
 
     var rows = data.slice(1);
 
     return rows.map(function(row, rIdx) {
-      var numVal = (idxNumero !== -1 && row[idxNumero]) ? row[idxNumero] : ("OS-" + (rIdx + 1));
-      var dataVal = (idxData !== -1 && row[idxData]) ? row[idxData] : "";
-      var formaVal = (idxForma !== -1 && row[idxForma]) ? row[idxForma] : "CONTRATO";
-      var cliVal = (idxCliente !== -1 && row[idxCliente]) ? row[idxCliente] : "";
-      var chegVal = (idxChegada !== -1 && row[idxChegada]) ? row[idxChegada] : "";
-      var iniVal = (idxInicio !== -1 && row[idxInicio]) ? row[idxInicio] : "";
-      var terVal = (idxTermino !== -1 && row[idxTermino]) ? row[idxTermino] : "";
-      var prodVal = (idxProduto !== -1 && row[idxProduto]) ? row[idxProduto] : "DIESEL";
-      var volVal = (idxVolume !== -1 && row[idxVolume]) ? row[idxVolume] : "0,00";
-      var obsVal = (idxObs !== -1 && row[idxObs]) ? row[idxObs] : "";
-      var assVal = (idxAssinatura !== -1 && row[idxAssinatura]) ? row[idxAssinatura] : "";
-      var fotoVal = (idxFoto !== -1 && row[idxFoto]) ? row[idxFoto] : "";
-      var valorLitroVal = (idxValorLitro !== -1 && row[idxValorLitro]) ? row[idxValorLitro] : "";
-      var valorTotalVal = (idxValorTotal !== -1 && row[idxValorTotal]) ? row[idxValorTotal] : "";
+      var numVal = (idxNumero < row.length && row[idxNumero]) ? row[idxNumero] : ("OS-" + (rIdx + 1));
+      var dataVal = (idxData < row.length && row[idxData]) ? row[idxData] : "";
+      var formaVal = (idxForma < row.length && row[idxForma]) ? row[idxForma] : "CONTRATO";
+      var cliVal = (idxCliente < row.length && row[idxCliente]) ? row[idxCliente] : "";
+      var chegVal = (idxChegada < row.length && row[idxChegada]) ? row[idxChegada] : "";
+      var iniVal = (idxInicio < row.length && row[idxInicio]) ? row[idxInicio] : "";
+      var terVal = (idxTermino < row.length && row[idxTermino]) ? row[idxTermino] : "";
+      var prodVal = (idxProduto < row.length && row[idxProduto]) ? row[idxProduto] : "DIESEL";
+      var volVal = (idxVolume < row.length && row[idxVolume]) ? row[idxVolume] : "0,00";
+      var obsVal = (idxObs < row.length && row[idxObs]) ? row[idxObs] : "";
+      var assVal = (idxAssinatura < row.length && row[idxAssinatura]) ? row[idxAssinatura] : "";
+      var fotoVal = (idxFoto < row.length && row[idxFoto]) ? row[idxFoto] : "";
+      var valorLitroVal = (idxValorLitro < row.length && row[idxValorLitro]) ? row[idxValorLitro] : "";
+      var valorTotalVal = (idxValorTotal < row.length && row[idxValorTotal]) ? row[idxValorTotal] : "";
 
       // Ignora linhas totalmente em branco
       if (!numVal && !cliVal && !volVal) return null;
 
-      // Se tiver valorLitro e volume, mas valorTotal estiver zerado ou vazio, calcula na hora
-      var vLitroF = parseFloat(String(valorLitroVal || "").replace(/[^\d,\.-]/g, "").replace(/\./g, "").replace(",", "."));
-      var vVolF = parseFloat(String(volVal || "").replace(/[^\d,\.-]/g, "").replace(/\./g, "").replace(",", "."));
-      var vTotF = parseFloat(String(valorTotalVal || "").replace(/[^\d,\.-]/g, "").replace(/\./g, "").replace(",", "."));
+      // Se tiver valorLitro e volume, calcula o valor total se não estiver preenchido
+      var vLitroF = parseNumClean(valorLitroVal);
+      var vVolF = parseNumClean(volVal);
+      var vTotF = parseNumClean(valorTotalVal);
 
-      if (!isNaN(vLitroF) && vLitroF > 0 && !isNaN(vVolF) && vVolF > 0) {
-        if (!valorTotalVal || isNaN(vTotF) || vTotF === 0) {
+      if (vLitroF > 0 && vVolF > 0) {
+        if (!valorTotalVal || vTotF === 0 || valorTotalVal === "-" || valorTotalVal === "R$ 0,00") {
           var calcTot = Math.round(vLitroF * vVolF * 100) / 100;
           valorTotalVal = "R$ " + calcTot.toFixed(2).replace(".", ",");
         }
+      }
+
+      if (valorLitroVal && vLitroF > 0 && valorLitroVal.indexOf("R$") === -1) {
+        valorLitroVal = "R$ " + vLitroF.toFixed(2).replace(".", ",");
       }
 
       return {

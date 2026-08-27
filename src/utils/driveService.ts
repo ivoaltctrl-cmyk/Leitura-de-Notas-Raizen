@@ -248,11 +248,22 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
     if (!Array.isArray(list)) return [];
     return list.map((r: any, idx: number) => {
       const findVal = (aliases: string[]): any => {
+        // Priority 1: Exact key match
         for (const k of Object.keys(r)) {
           const kLower = k.toLowerCase().replace(/[\s_\/-]/g, '');
           for (const a of aliases) {
             const aLower = a.toLowerCase().replace(/[\s_\/-]/g, '');
-            if (kLower === aLower || kLower.includes(aLower)) {
+            if (kLower === aLower) {
+              if (r[k] !== undefined && r[k] !== null && r[k] !== '') return r[k];
+            }
+          }
+        }
+        // Priority 2: Substring match
+        for (const k of Object.keys(r)) {
+          const kLower = k.toLowerCase().replace(/[\s_\/-]/g, '');
+          for (const a of aliases) {
+            const aLower = a.toLowerCase().replace(/[\s_\/-]/g, '');
+            if (kLower.includes(aLower)) {
               if (r[k] !== undefined && r[k] !== null && r[k] !== '') return r[k];
             }
           }
