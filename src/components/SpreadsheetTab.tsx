@@ -211,7 +211,35 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
       const sheetResult = await fetchRecordsFromSheet(gasConfig.webhookUrl, gasConfig.sheetUrl, gasConfig.secretToken);
       
       if (sheetResult.sucesso && Array.isArray(sheetResult.records)) {
-        onSetRecords(sheetResult.records);
+        const prevMap = new Map<string, AbastecimentoRecord>();
+        records.forEach((r) => {
+          if (r.id) prevMap.set(r.id, r);
+          if (r.numero) prevMap.set(r.numero, r);
+        });
+
+        const merged = sheetResult.records.map((newR) => {
+          const prevMatch = (newR.id && prevMap.get(newR.id)) || (newR.numero && prevMap.get(newR.numero));
+          const precoLitro = newR.valorLitro || prevMatch?.valorLitro || '';
+          const volStr = newR.volume || prevMatch?.volume || '0,00';
+          let valorTotal = newR.valorTotal || prevMatch?.valorTotal || '';
+
+          const precoNum = parseCurrencyFloat(precoLitro);
+          const volNum = parseVolumeFloat(volStr);
+          const totalNum = parseCurrencyFloat(valorTotal);
+
+          if (precoNum > 0 && volNum > 0 && (!valorTotal || totalNum === 0)) {
+            valorTotal = formatCurrencyBRL(volNum * precoNum);
+          }
+
+          return {
+            ...(prevMatch || {}),
+            ...newR,
+            valorLitro: precoLitro,
+            valorTotal: valorTotal,
+          };
+        });
+
+        onSetRecords(merged);
       }
 
       if (robotResult.sucesso) {
