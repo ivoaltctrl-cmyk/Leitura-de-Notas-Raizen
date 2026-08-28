@@ -30,7 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Controle de Abastecimento
               </h1>
               <p className="text-xs text-neutral-500 hidden sm:block font-medium">
-                WFS Ground Support • Operação Raízen
+                WFS Ground Handling - Abastecimentos
               </p>
             </div>
           </div>

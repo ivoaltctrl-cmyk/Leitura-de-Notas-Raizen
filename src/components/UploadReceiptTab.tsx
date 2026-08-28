@@ -15,6 +15,7 @@ import {
 import { AbastecimentoRecord, GasConfig } from '../types';
 import { compressImage, uploadImageToGoogleDrive } from '../utils/driveService';
 import { LargeCameraModal } from './LargeCameraModal';
+import { OperatorAuthModal } from './OperatorAuthModal';
 
 interface UploadReceiptTabProps {
   gasConfig: GasConfig;
@@ -42,8 +43,41 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
   const [lastSavedRecord, setLastSavedRecord] = useState<AbastecimentoRecord | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLargeCameraOpen, setIsLargeCameraOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+  // Checks if current browser session has already been authenticated
+  const checkIsAuthenticated = () => {
+    try {
+      return (
+        sessionStorage.getItem('operator_session_auth') === 'true' ||
+        sessionStorage.getItem('admin_session_auth') === 'true'
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  // Wrapper that asks for password on button click if unauthenticated
+  const executeWithAuth = (action: () => void) => {
+    if (checkIsAuthenticated()) {
+      action();
+    } else {
+      pendingActionRef.current = action;
+      setIsAuthModalOpen(true);
+    }
+  };
+
+  const handleAuthSuccess = () => {
+    setIsAuthModalOpen(false);
+    if (pendingActionRef.current) {
+      const action = pendingActionRef.current;
+      pendingActionRef.current = null;
+      action();
+    }
+  };
 
   // Handle file select from gallery or computer
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,8 +227,10 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
             <button
               type="button"
               onClick={() => {
-                setLastSavedRecord(null);
-                setIsLargeCameraOpen(true);
+                executeWithAuth(() => {
+                  setLastSavedRecord(null);
+                  setIsLargeCameraOpen(true);
+                });
               }}
               className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
@@ -280,7 +316,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                 <button
                   type="button"
                   id="btn-upload-direct-drive"
-                  onClick={handleExecuteDirectDriveUpload}
+                  onClick={() => executeWithAuth(handleExecuteDirectDriveUpload)}
                   disabled={isProcessingPipeline}
                   className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-neutral-300 text-white rounded-2xl text-base font-bold flex items-center justify-center gap-2.5 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer transform active:scale-[0.99]"
                 >
@@ -302,7 +338,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
             /* Upload / Capture Dropzone */
             <div className="space-y-4">
               <div
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => executeWithAuth(() => fileInputRef.current?.click())}
                 className="border-2 border-dashed border-neutral-300 hover:border-red-500 bg-neutral-50/70 hover:bg-red-50/20 rounded-2xl p-8 sm:p-10 text-center cursor-pointer transition-all group"
               >
                 <input
@@ -328,7 +364,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
                 <button
                   type="button"
                   id="btn-open-large-camera"
-                  onClick={() => setIsLargeCameraOpen(true)}
+                  onClick={() => executeWithAuth(() => setIsLargeCameraOpen(true))}
                   className="py-4 px-4 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2.5 shadow-sm transition-colors cursor-pointer"
                 >
                   <Camera className="w-5 h-5 text-red-500" />
@@ -337,7 +373,7 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => executeWithAuth(() => fileInputRef.current?.click())}
                   className="py-4 px-4 bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-300 rounded-xl text-sm font-bold flex items-center justify-center gap-2.5 shadow-xs transition-colors cursor-pointer"
                 >
                   <ImageIcon className="w-5 h-5 text-neutral-600" />
@@ -408,6 +444,16 @@ export const UploadReceiptTab: React.FC<UploadReceiptTabProps> = ({
         isOpen={isLargeCameraOpen}
         onClose={() => setIsLargeCameraOpen(false)}
         onCapture={handleLargeCameraCapture}
+      />
+
+      {/* Operator Authentication Modal */}
+      <OperatorAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          pendingActionRef.current = null;
+        }}
+        onSuccess={handleAuthSuccess}
       />
     </div>
   );

@@ -25,7 +25,9 @@ interface SettingsTabProps {
 }
 
 const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
+const STORAGE_KEY_OPERATOR_PASS = 'abastecimento_operator_password';
 const DEFAULT_PASSWORD = 'Admin1234';
+const DEFAULT_OPERATOR_PASSWORD = '1234';
 
 // URL PADRÃO OFICIAL - Webhook padrão de produção do Google Apps Script
 export const DEFAULT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec';
@@ -62,7 +64,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [newOperatorPassword, setNewOperatorPassword] = useState('');
   const [passwordChangeMsg, setPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [opPasswordChangeMsg, setOpPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Cache clear state
   const [cacheClearedMsg, setCacheClearedMsg] = useState<string | null>(null);
@@ -208,13 +212,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
 
     localStorage.setItem(STORAGE_KEY_ADMIN_PASS, newPassword);
-    setPasswordChangeMsg({ type: 'success', text: 'Senha alterada com sucesso!' });
+    setPasswordChangeMsg({ type: 'success', text: 'Senha de administrador alterada com sucesso!' });
     setNewPassword('');
     setConfirmPassword('');
     setTimeout(() => {
-      setShowPasswordChange(false);
       setPasswordChangeMsg(null);
-    }, 2000);
+    }, 3000);
+  };
+
+  const handleUpdateOperatorPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setOpPasswordChangeMsg(null);
+
+    if (!newOperatorPassword || newOperatorPassword.trim().length < 2) {
+      setOpPasswordChangeMsg({ type: 'error', text: 'A senha de operador deve ter pelo menos 2 caracteres.' });
+      return;
+    }
+
+    localStorage.setItem(STORAGE_KEY_OPERATOR_PASS, newOperatorPassword.trim());
+    setOpPasswordChangeMsg({ type: 'success', text: 'Senha de operador (Captura de Notas) atualizada com sucesso!' });
+    setNewOperatorPassword('');
+    setTimeout(() => {
+      setOpPasswordChangeMsg(null);
+    }, 3000);
   };
 
   // 1. Password Protection Gate
@@ -372,6 +392,57 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <span>{passwordChangeMsg.text}</span>
             </div>
           )}
+
+          {/* Senha de Operador (Captura de Notas) */}
+          <div className="pt-4 border-t border-neutral-200/80 space-y-3">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-700 flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-neutral-600" />
+                Senha de Operador (Aba Captura de Nota)
+              </h4>
+              <p className="text-[11px] text-neutral-500 mt-0.5">
+                Senha exigida quando um usuário clica para tirar fotos ou enviar notas ao Google Drive (Padrão: <code className="font-mono bg-neutral-200 px-1 py-0.2 rounded text-neutral-800">1234</code>).
+              </p>
+            </div>
+
+            <form onSubmit={handleUpdateOperatorPassword} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-bold text-neutral-600 block mb-1">Nova Senha de Operador</label>
+                <input
+                  type="text"
+                  value={newOperatorPassword}
+                  onChange={(e) => setNewOperatorPassword(e.target.value)}
+                  placeholder="Ex: 1234, wfs2026, operacao"
+                  className="w-full px-3 py-2 text-xs bg-white rounded-lg border border-neutral-300 focus:border-red-500 outline-hidden font-mono"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Salvar Senha de Operador
+                </button>
+              </div>
+            </form>
+
+            {opPasswordChangeMsg && (
+              <div
+                className={`p-2.5 rounded-lg text-xs font-medium flex items-center gap-2 ${
+                  opPasswordChangeMsg.type === 'success'
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-red-100 text-red-800 border border-red-300'
+                }`}
+              >
+                {opPasswordChangeMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                )}
+                <span>{opPasswordChangeMsg.text}</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

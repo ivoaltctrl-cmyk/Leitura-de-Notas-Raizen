@@ -520,7 +520,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
           <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 space-y-0.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
               <DollarSign className="w-3 h-3 text-emerald-600" />
-              Faturamento Previsto (R$)
+              Custo Previsto (R$)
             </span>
             <div className="text-base sm:text-lg font-black text-emerald-900 font-mono">
               {totalFinanceiro > 0 ? formatCurrencyBRL(totalFinanceiro) : 'R$ 0,00'}
