@@ -437,23 +437,21 @@ function excluirRegistroLinha(data) {
 
 export const SCRIPT_CODIGO_GS = `/**
  * ============================================================================
- * SISTEMA INTEGRADO WFS / RAÍZEN - ROBÔ DE IA GEMINI (Código.gs)
+ * SCRIPT 2: PROCESSADOR AUTOMÁTICO GEMINI IA (ROBÔ DE LEITURA DAS NOTAS)
  * ============================================================================
- * Responsabilidade:
- * 1. Processar pasta do Google Drive com fotos de notas/comprovantes
- * 2. Realizar OCR e auditoria com modelo Gemini 2.5 Flash Lite
- * 3. Gravar dados extraídos na aba "Dados_Raizen" da planilha Google Sheets
- * 4. Mover fotos processadas para a subpasta "Processados"
+ * Função: Varre a pasta do Drive periodicamente via acionador temporal,
+ * envia os comprovantes para a API Gemini (extraindo Número, Data, Horários, etc.),
+ * grava o resultado na aba "Dados_Raizen" (Colunas A a N) e move para "Processados".
  * ============================================================================
  */
-
 var ABASTECIMENTO_CONFIG = {
   SHEET_NAME: "Dados_Raizen",
   PASTA_PROCESSADOS: "Processados",
   MAX_FILE_SIZE_MB: 8
 };
 
-var GEMINI_MODEL_ABASTECIMENTO = "gemini-2.5-flash-lite"; // Alta volumetria e velocidade
+// Modelo configurado para alta volumetria e velocidade
+var GEMINI_MODEL_ABASTECIMENTO = 'gemini-2.5-flash-lite';
 
 function processarPastaAbastecimentos(limiteLote) {
   var lock = LockService.getScriptLock();
@@ -479,17 +477,20 @@ function processarPastaAbastecimentos(limiteLote) {
     
     if (!folderId || !apiKey) {
       Logger.log("Erro: Propriedades DRIVE_FOLDER_ID ou GEMINI_API_KEY não configuradas.");
-      return { sucesso: false, mensagem: "Configure DRIVE_FOLDER_ID e GEMINI_API_KEY nas Propriedades do Script." };
+      return { sucesso: false, mensagem: "Propriedades DRIVE_FOLDER_ID ou GEMINI_API_KEY não configuradas no Script." };
     }
     
     var folder;
     try {
       folder = DriveApp.getFolderById(folderId);
     } catch (e) {
+      Logger.log("Erro de Acesso: Não foi possível acessar a pasta ID: " + folderId);
       return { sucesso: false, mensagem: "Não foi possível acessar a pasta ID: " + folderId };
     }
 
+    // Define/Cria a pasta "Processados" antes de varrer os arquivos
     var processedFolder = getOuCriarSubpasta(folder, ABASTECIMENTO_CONFIG.PASTA_PROCESSADOS);
+
     var files = folder.getFiles();
     
     while (files.hasNext() && countProcessados < maxArquivos) {
@@ -499,15 +500,24 @@ function processarPastaAbastecimentos(limiteLote) {
       if (mimeType.indexOf("image/") === 0 || mimeType === "application/pdf") {
         try {
           if (file.getSize() > ABASTECIMENTO_CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024) {
+            Logger.log("Aviso: Arquivo " + file.getName() + " excede o limite de " + ABASTECIMENTO_CONFIG.MAX_FILE_SIZE_MB + "MB.");
             continue;
           }
           
+          Logger.log("Processando arquivo (" + (countProcessados + 1) + "): " + file.getName());
+
+          // Captura a URL ANTES de mover, pois é o link gravado na planilha
           var fileUrl = file.getUrl();
+
           processarUmaNotaAbastecimento(file, apiKey, fileUrl);
+
           file.moveTo(processedFolder);
           countProcessados++;
+          Logger.log("Sucesso: Arquivo " + file.getName() + " movido para '" + ABASTECIMENTO_CONFIG.PASTA_PROCESSADOS + "'.");
           
-          Utilities.sleep(3000); // 3 segundos entre chamadas
+          // PAUSA DE SEGURANÇA: 4 segundos entre arquivos para respeitar cotas
+          Utilities.sleep(4000);
+
         } catch (err) {
           countErros++;
           Logger.log('Erro ao processar ' + file.getName() + ': ' + err.message);
@@ -517,8 +527,8 @@ function processarPastaAbastecimentos(limiteLote) {
 
     var temMaisPendentes = files.hasNext();
     var mensagemRetorno = countProcessados > 0 
-      ? ("Sucesso: " + countProcessados + " nota(s) processada(s) e inserida(s) na planilha!" + (temMaisPendentes ? " (Ainda restam fotos na pasta)." : ""))
-      : "Nenhuma foto pendente para processar na pasta.";
+      ? ("Sucesso: " + countProcessados + " nota(s) processada(s) e inserida(s) na planilha!" + (temMaisPendentes ? " (Ainda restam arquivos na fila - clique novamente para o próximo lote)." : ""))
+      : "Nenhuma foto nova pendente para processar na pasta.";
 
     Logger.log(mensagemRetorno);
     return {
@@ -549,18 +559,32 @@ function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
     "=== REGRAS OBRIGATÓRIAS DE EXTRAÇÃO ===",
     "1. VOLUME (QUANTIDADE ABASTECIDA):",
     "   - Deve ser SEMPRE um número com 2 casas decimais (ex: 35.00, 37.00, 120.50).",
-    "   - Se a nota exibir 37 ou 37.000 ou 37,00, registre estritamente 37.00.",
-    "   - Se o valor impresso na nota tiver 3 casas decimais (ex: 35.000), converta para 35.00.",
-    "   - Verifique a prova real: Volume = Valor Total / Preço Unitário para desempatar números embaçados.",
+    "   - Se a nota exibir \\"37\\" ou \\"37.000\\" ou \\"37,00\\", registre estritamente 37.00.",
+    "   - Se o valor impresso na nota tiver 3 casas decimais (ex: \\"35.000\\"), converta para 35.00.",
+    "   - Verifique a prova real: Volume = Valor Total / Preço Unitário para desempatar números embaçados (ex: 3 vs 8, 5 vs 6).",
     "",
-    "2. OBSERVAÇÃO / EQUIPAMENTO / PREFIXO:",
+    "2. OBSERVAÇÃO / EQUIPAMENTO / PREFIXO (FEW-SHOT EXAMPLES DA OPERAÇÃO):",
     "   - Copie exatamente os caracteres de identificação do equipamento, rampa, prefixo e placa.",
-    "   - EXEMPLOS: GASOL XXD / TZ01A81, QTA-01, GPU-04, TRATOR-12, REBOCADOR 03, VAN-08.",
+    "   - EXEMPLOS REAIS DE PADRÃO:",
+    "     * \\"GASOL XXD / TZ01A81\\" -> registre exatamente \\"GASOL XXD / TZ01A81\\" (não confunda Z com T ou 1 com I).",
+    "     * \\"GASOL XXD / TZT8...\\" -> confira se é a placa \\"TZ01A81\\" ou similar.",
+    "     * \\"QTA-01\\", \\"GPU-04\\", \\"TRATOR-12\\", \\"REBOCADOR 03\\", \\"VAN-08\\".",
+    "     * Mantenha letras maiúsculas e números sem trocar caracteres alfanuméricos.",
     "",
-    "3. HORÁRIOS (CHEGADA, INÍCIO, TÉRMINO): Formato HH:mm (24h, ex: 12:51, 16:14, 16:15).",
-    "4. NÚMERO DA NOTA: Sequência numérica impressa no cabeçalho ou campo OS (ex: 2393379).",
-    "5. DATA: Formato DD/MM/AAAA (ex: 27/08/2026).",
-    "6. CLIENTE & PRODUTO: Cliente (ex: ORBITAL, WFS, GOL) e Produto (GASOLINA, DIESEL, JET A-1).",
+    "3. HORÁRIOS (CHEGADA, INÍCIO, TÉRMINO):",
+    "   - Formato estrito HH:mm (24 horas, ex: 12:51, 16:14, 16:15).",
+    "   - Extraia com exatidão a hora da chegada, o início do abastecimento e o término do abastecimento.",
+    "",
+    "4. NÚMERO DA NOTA:",
+    "   - Sequência numérica única impressa no cabeçalho ou campo Número/OS (ex: \\"2393379\\", \\"2393515\\").",
+    "",
+    "5. DATA DO ABASTECIMENTO:",
+    "   - Formato DD/MM/AAAA (ex: \\"27/08/2026\\").",
+    "",
+    "6. CLIENTE & PRODUTO:",
+    "   - Cliente: Razão social ou nome impresso (ex: \\"ORBITAL SERV AUX TRANSP AEREO\\", \\"WFS\\", \\"GOL\\", \\"LATAM\\", \\"AZUL\\").",
+    "   - Produto: \\"GASOLINA\\", \\"DIESEL S10\\", \\"DIESEL\\", \\"JET A-1\\", etc.",
+    "   - Forma de Pagamento: \\"CONTRATO\\", \\"FATURADO\\", \\"A VISTA\\", etc.",
     "",
     "Responda EXCLUSIVAMENTE com o JSON estruturado abaixo, sem markdown e sem comentários:",
     "{",
@@ -579,7 +603,7 @@ function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
   ];
   var prompt = promptLines.join("\\n");
 
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL_ABASTECIMENTO + ":generateContent?key=" + apiKey;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL_ABASTECIMENTO + ':generateContent?key=' + apiKey;
 
   var requestBody = {
     contents: [{
@@ -589,21 +613,22 @@ function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
       ]
     }],
     generationConfig: {
-      responseMimeType: "application/json",
+      responseMimeType: 'application/json',
       temperature: 0.0,
       topP: 0.1,
       maxOutputTokens: 1024
     }
   };
 
+  // SISTEMA DE RE-TENTATIVAS EM CASO DE ERRO 429
   var tentativasMax = 3;
   var respostaSucesso = false;
   var response, responseCode;
 
   for (var i = 0; i < tentativasMax; i++) {
     response = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
+      method: 'post',
+      contentType: 'application/json',
       payload: JSON.stringify(requestBody),
       muteHttpExceptions: true
     });
@@ -614,31 +639,32 @@ function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
       respostaSucesso = true;
       break;
     } else if (responseCode === 429) {
-      Utilities.sleep(8000);
+      Logger.log("Limite de taxa (429) atingido. Aguardando 10 segundos antes de tentar novamente...");
+      Utilities.sleep(10000);
     } else {
       break;
     }
   }
 
   if (!respostaSucesso) {
-    throw new Error("Falha na API Gemini (Status: " + responseCode + ")");
+    throw new Error('Falha na resposta da API Gemini (Status: ' + responseCode + ')');
   }
 
   var json = JSON.parse(response.getContentText());
 
   if (json.error) {
-    throw new Error("Erro Gemini API: " + json.error.message);
+    throw new Error('Erro Gemini API: ' + json.error.message);
   }
   if (!json.candidates || !json.candidates[0] || !json.candidates[0].content) {
-    throw new Error("Resposta inválida da API Gemini.");
+    throw new Error('Resposta inválida recebida da API.');
   }
   var rawText = json.candidates[0].content.parts[0].text;
-  var cleanText = rawText.indexOf("{") > -1 ? rawText.slice(rawText.indexOf("{"), rawText.lastIndexOf("}") + 1) : rawText.trim();
+  var cleanText = rawText.replace(/\`\`\`json|\`\`\`/gi, '').trim();
 
   try {
     return JSON.parse(cleanText);
   } catch (e) {
-    throw new Error("Erro ao converter resposta do Gemini em JSON: " + cleanText);
+    throw new Error('Erro ao converter resposta em JSON: ' + cleanText);
   }
 }
 
@@ -646,13 +672,14 @@ function salvarAbastecimentoNaPlanilha(dados, fileUrl) {
   dados = dados || {};
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+
   if (!ss) {
     var scriptProperties = PropertiesService.getScriptProperties();
     var sheetId = scriptProperties.getProperty('SPREADSHEET_ID');
     if (sheetId) {
       ss = SpreadsheetApp.openById(sheetId);
     } else {
-      throw new Error("Planilha não configurada. Defina 'SPREADSHEET_ID' nas Propriedades do Script.");
+      throw new Error("Impossível acessar a planilha. Configure 'SPREADSHEET_ID' nas Propriedades do Script.");
     }
   }
   var sheet = ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME) || configurarAbaAbastecimentos(ss);
@@ -662,51 +689,84 @@ function salvarAbastecimentoNaPlanilha(dados, fileUrl) {
     var parsed = parseFloat(dados.volume.toString().replace(',', '.'));
     volumeTratado = isNaN(parsed) ? 0 : parsed;
   }
-  var volumeFormatado = volumeTratado > 0 ? volumeTratado.toFixed(2).replace('.', ',') : (dados.volume ? String(dados.volume) : "");
 
-  var nextRow = sheet.getLastRow() + 1;
-  var formulaValorTotal = "=IF(AND(ISNUMBER(I" + nextRow + "),ISNUMBER(M" + nextRow + ")),I" + nextRow + "*M" + nextRow + ",\"\")";
+  var dataHoje = Utilities.formatDate(new Date(), "GMT-3", "dd/MM/yyyy");
+  var dataTratada = (dados.dataAbastecimento && String(dados.dataAbastecimento).trim().length >= 8) 
+    ? String(dados.dataAbastecimento).trim() 
+    : dataHoje;
 
-  var rowData = [
-    dados.numero ? String(dados.numero) : "",
-    dados.dataAbastecimento ? String(dados.dataAbastecimento) : "",
-    dados.formaPagamento ? String(dados.formaPagamento).toUpperCase() : "CONTRATO",
-    dados.cliente ? String(dados.cliente).toUpperCase() : "",
-    dados.horaChegada ? String(dados.horaChegada) : "",
-    dados.inicioAbastecimento ? String(dados.inicioAbastecimento) : "",
-    dados.terminoAbastecimento ? String(dados.terminoAbastecimento) : "",
-    dados.produto ? String(dados.produto).toUpperCase() : "DIESEL",
-    volumeFormatado,
-    dados.obs ? String(dados.obs) : "",
-    dados.assinaturaCliente ? String(dados.assinaturaCliente) : "",
-    fileUrl || "",
-    "",
-    formulaValorTotal
-  ];
+  // Verifica o cabeçalho existente
+  var headerValues = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 14)).getDisplayValues()[0];
+  var temColunaData = headerValues.some(function(h) { 
+    return h.toLowerCase().indexOf("data") !== -1; 
+  });
 
-  sheet.appendRow(rowData);
-  Logger.log("Registro inserido com sucesso na linha " + nextRow + " (Nota Nº " + dados.numero + ")");
+  var novaLinha;
+  if (temColunaData) {
+    // 14 Colunas Oficiais (A a N):
+    novaLinha = [
+      dados.numero ? String(dados.numero).trim() : "",                             // A: Número
+      dataTratada,                                                                 // B: Data do Abastecimento
+      dados.formaPagamento ? String(dados.formaPagamento).trim() : "CONTRATO",     // C: Forma de Pagamento
+      dados.cliente ? String(dados.cliente).trim() : "",                           // D: Cliente
+      dados.horaChegada ? String(dados.horaChegada).trim() : "",                   // E: Hora da Chegada
+      dados.inicioAbastecimento ? String(dados.inicioAbastecimento).trim() : "",   // F: Início do Abastecimento
+      dados.terminoAbastecimento ? String(dados.terminoAbastecimento).trim() : "", // G: Término do Abastecimento
+      dados.produto ? String(dados.produto).trim() : "DIESEL",                     // H: Produto
+      volumeTratado,                                                               // I: Volume
+      dados.obs ? String(dados.obs).trim() : "",                                  // J: Obs.:
+      dados.assinaturaCliente ? String(dados.assinaturaCliente).trim() : "",      // K: Assinatura do Cliente
+      fileUrl || "",                                                               // L: Foto da Nota (Link Drive)
+      "",                                                                          // M: Valor/Litro (alimentado pelo usuário)
+      ""                                                                           // N: Valor Total (calculado)
+    ];
+    sheet.appendRow(novaLinha);
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow, 9).setNumberFormat("#,##0.00"); // Coluna I = Volume
+    sheet.getRange(lastRow, 1, 1, novaLinha.length).setVerticalAlignment("middle");
+  } else {
+    // 11 Colunas Legado (A a K)
+    novaLinha = [
+      dados.numero ? String(dados.numero).trim() : "",                             // A: Número
+      dados.formaPagamento ? String(dados.formaPagamento).trim() : "CONTRATO",     // B: Forma de Pagamento
+      dados.cliente ? String(dados.cliente).trim() : "",                           // C: Cliente
+      dados.horaChegada ? String(dados.horaChegada).trim() : "",                   // D: Hora da Chegada
+      dados.inicioAbastecimento ? String(dados.inicioAbastecimento).trim() : "",   // E: Início do Abastecimento
+      dados.terminoAbastecimento ? String(dados.terminoAbastecimento).trim() : "", // F: Término do Abastecimento
+      dados.produto ? String(dados.produto).trim() : "DIESEL",                     // G: Produto
+      volumeTratado,                                                               // H: Volume
+      dados.obs ? String(dados.obs).trim() : "",                                  // I: Obs.:
+      dados.assinaturaCliente ? String(dados.assinaturaCliente).trim() : "",      // J: Assinatura do Cliente
+      fileUrl || ""                                                                // K: Foto da Nota (Link Drive)
+    ];
+    sheet.appendRow(novaLinha);
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow, 8).setNumberFormat("#,##0.00"); // Coluna H = Volume
+    sheet.getRange(lastRow, 1, 1, novaLinha.length).setVerticalAlignment("middle");
+  }
+
+  return { sucesso: true, mensagem: "Nota gravada com sucesso!" };
 }
 
 function configurarAbaAbastecimentos(ss) {
-  var sheet = ss.insertSheet(ABASTECIMENTO_CONFIG.SHEET_NAME);
+  var sheet = ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(ABASTECIMENTO_CONFIG.SHEET_NAME);
   var headers = [
-    "Número", "Data", "Forma Pagamento", "Cliente",
-    "Chegada", "Início", "Término", "Produto",
-    "Volume", "Obs.", "Assinatura do Cliente", "Link da Foto",
-    "Valor/Litro", "Valor Total"
+    "Número", "Data do Abastecimento", "Forma de Pagamento", "Cliente", "Hora da Chegada",
+    "Início do Abastecimento", "Término do Abastecimento", "Produto",
+    "Volume", "Obs.:", "Assinatura do Cliente", "Foto da Nota", "Valor/Litro", "Valor Total"
   ];
-  sheet.appendRow(headers);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
-  headerRange.setBackground("#D32F2F").setFontColor("#FFFFFF").setFontWeight("bold");
+  headerRange.setValues([headers]);
+  headerRange.setBackground("#E31B23").setFontColor("#FFFFFF").setFontWeight("bold")
+             .setHorizontalAlignment("center").setVerticalAlignment("middle");
   sheet.setFrozenRows(1);
   return sheet;
 }
 
 function getOuCriarSubpasta(pastaPai, nome) {
-  var pastas = pastaPai.getFoldersByName(nome);
-  if (pastas.hasNext()) return pastas.next();
-  return pastaPai.createFolder(nome);
+  var subpastas = pastaPai.getFoldersByName(nome);
+  return subpastas.hasNext() ? subpastas.next() : pastaPai.createFolder(nome);
 }
 
 // Aliases para acionadores manuais
