@@ -23,10 +23,17 @@ import {
   Bot,
   TrendingUp,
   Filter,
+  Edit3,
+  Trash2,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
 import { exportToExcelXLSX, exportToCSV, copyTableAsTSV } from '../utils/exportUtils';
-import { fetchRecordsFromSheet, triggerGasProcessing } from '../utils/driveService';
+import { 
+  fetchRecordsFromSheet, 
+  triggerGasProcessing, 
+  updateReceiptRecordInSheet, 
+  deleteReceiptRecordFromSheet 
+} from '../utils/driveService';
 import { 
   parseVolumeFloat, 
   parseCurrencyFloat, 
@@ -37,6 +44,9 @@ import {
   formatDateToInput 
 } from '../utils/dateUtils';
 import { FuelPriceModal } from './FuelPriceModal';
+import { EditReceiptModal } from './EditReceiptModal';
+import { DeleteReceiptModal } from './DeleteReceiptModal';
+import { OperatorAuthModal } from './OperatorAuthModal';
 
 interface SpreadsheetTabProps {
   records: AbastecimentoRecord[];
@@ -63,6 +73,18 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
   // Fuel Price Launch Modal state
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
+
+  // Edit and Delete Modal States
+  const [editingRecord, setEditingRecord] = useState<AbastecimentoRecord | null>(null);
+  const [deletingRecord, setDeletingRecord] = useState<AbastecimentoRecord | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isDeletingRow, setIsDeletingRow] = useState(false);
+
+  // Operator Authentication for Edit / Delete
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [pendingAuthAction, setPendingAuthAction] = useState<(() => void) | null>(null);
+  const [authModalTitle, setAuthModalTitle] = useState('Autorização de Operador');
+  const [authModalSubtitle, setAuthModalSubtitle] = useState('Digite a senha do operador para autorizar esta ação.');
 
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -347,6 +369,135 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
     onSetRecords(updatedList);
     setSyncStatus({ type: 'success', msg: message });
     setTimeout(() => setSyncStatus(null), 7000);
+  };
+
+  // Helper to ensure operator authentication before critical actions (Edit / Delete)
+  const requireOperatorAuth = (action: () => void, title?: string, subtitle?: string) => {
+    const isAuth = sessionStorage.getItem('operator_session_auth') === 'true';
+    if (isAuth) {
+      action();
+    } else {
+      setPendingAuthAction(() => action);
+      setAuthModalTitle(title || 'Autorização de Operador');
+      setAuthModalSubtitle(subtitle || 'Digite a senha do operador para autorizar esta ação.');
+      setIsAuthModalOpen(true);
+    }
+  };
+
+  const handleAuthSuccess = () => {
+    setIsAuthModalOpen(false);
+    if (pendingAuthAction) {
+      const action = pendingAuthAction;
+      setPendingAuthAction(null);
+      action();
+    }
+  };
+
+  // Initiate Edit with operator password check
+  const handleInitiateEdit = (record: AbastecimentoRecord) => {
+    requireOperatorAuth(
+      () => setEditingRecord(record),
+      'Autorização para Editar Lançamento',
+      `Digite a senha de operador para autorizar a edição do abastecimento Nº ${record.numero || 'S/N'}.`
+    );
+  };
+
+  // Initiate Delete with operator password check
+  const handleInitiateDelete = (record: AbastecimentoRecord) => {
+    requireOperatorAuth(
+      () => setDeletingRecord(record),
+      'Autorização para Excluir Lançamento',
+      `Digite a senha de operador para autorizar a exclusão permanente do abastecimento Nº ${record.numero || 'S/N'} da planilha.`
+    );
+  };
+
+  // Save changes to Google Sheets
+  const handleSaveEdit = async (updatedRecord: AbastecimentoRecord, oldNumero?: string) => {
+    setIsSavingEdit(true);
+    try {
+      const res = await updateReceiptRecordInSheet(
+        gasConfig.webhookUrl,
+        gasConfig.secretToken,
+        updatedRecord,
+        oldNumero
+      );
+
+      if (res.sucesso) {
+        const nextRecords = records.map((r) => {
+          if ((updatedRecord.id && r.id === updatedRecord.id) || (oldNumero && r.numero === oldNumero)) {
+            return {
+              ...r,
+              ...updatedRecord,
+            };
+          }
+          return r;
+        });
+
+        onSetRecords(nextRecords);
+        setSyncStatus({
+          type: 'success',
+          msg: res.mensagem || `Lançamento Nº ${updatedRecord.numero} atualizado na planilha com sucesso!`,
+        });
+        setEditingRecord(null);
+        setTimeout(() => setSyncStatus(null), 6000);
+      } else {
+        setSyncStatus({
+          type: 'error',
+          msg: res.mensagem || 'Falha ao atualizar lançamento na planilha.',
+        });
+        alert(res.mensagem || 'Não foi possível atualizar o lançamento.');
+      }
+    } catch (err: any) {
+      setSyncStatus({
+        type: 'error',
+        msg: `Erro ao salvar: ${err.message}`,
+      });
+      alert(`Erro ao salvar: ${err.message}`);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Delete row from Google Sheets
+  const handleConfirmDelete = async (recordToDelete: AbastecimentoRecord) => {
+    setIsDeletingRow(true);
+    try {
+      const res = await deleteReceiptRecordFromSheet(
+        gasConfig.webhookUrl,
+        gasConfig.secretToken,
+        recordToDelete
+      );
+
+      if (res.sucesso) {
+        const nextRecords = records.filter((r) => {
+          if (recordToDelete.id && r.id === recordToDelete.id) return false;
+          if (recordToDelete.numero && r.numero === recordToDelete.numero) return false;
+          return true;
+        });
+
+        onSetRecords(nextRecords);
+        setSyncStatus({
+          type: 'success',
+          msg: res.mensagem || `Lançamento Nº ${recordToDelete.numero} excluído da planilha!`,
+        });
+        setDeletingRecord(null);
+        setTimeout(() => setSyncStatus(null), 6000);
+      } else {
+        setSyncStatus({
+          type: 'error',
+          msg: res.mensagem || 'Falha ao excluir lançamento da planilha.',
+        });
+        alert(res.mensagem || 'Não foi possível excluir o lançamento.');
+      }
+    } catch (err: any) {
+      setSyncStatus({
+        type: 'error',
+        msg: `Erro ao excluir: ${err.message}`,
+      });
+      alert(`Erro ao excluir: ${err.message}`);
+    } finally {
+      setIsDeletingRow(false);
+    }
   };
 
   const handleCopyTSV = async () => {
@@ -813,7 +964,8 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">K</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300">L</th>
                   <th className="py-0.5 px-1.5 text-center border-r border-neutral-300 bg-amber-100 text-amber-900 font-bold">M</th>
-                  <th className="py-0.5 px-1.5 text-center bg-emerald-100 text-emerald-900 font-bold">N</th>
+                  <th className="py-0.5 px-1.5 text-center border-r border-neutral-300 bg-emerald-100 text-emerald-900 font-bold">N</th>
+                  <th className="py-0.5 px-2 text-center bg-neutral-300 text-neutral-800 font-bold">Ações</th>
                 </tr>
 
                 {/* Primary Red Header Row */}
@@ -898,8 +1050,13 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                   </th>
 
                   {/* Col N: Valor Total (R$) */}
-                  <th className="py-2 px-2 text-right whitespace-nowrap bg-emerald-800">
+                  <th className="py-2 px-2 border-r border-red-700 text-right whitespace-nowrap bg-emerald-800">
                     <span>Valor Total</span>
+                  </th>
+
+                  {/* Ações (Editar / Excluir) */}
+                  <th className="py-2 px-2 text-center whitespace-nowrap bg-neutral-900 text-white">
+                    <span>Ações</span>
                   </th>
                 </tr>
               </thead>
@@ -1050,7 +1207,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                       </td>
 
                       {/* Col N: Valor Total */}
-                      <td className="py-2 px-2 text-right font-mono font-black text-emerald-800 whitespace-nowrap bg-emerald-50/30">
+                      <td className="py-2 px-2 border-r border-neutral-100 text-right font-mono font-black text-emerald-800 whitespace-nowrap bg-emerald-50/30">
                         {totalCalculado !== '-' ? (
                           <span className="text-emerald-700 font-bold">
                             {totalCalculado}
@@ -1058,6 +1215,28 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                         ) : (
                           <span className="text-neutral-400">-</span>
                         )}
+                      </td>
+
+                      {/* Ações: Editar e Excluir */}
+                      <td className="py-2 px-2 text-center whitespace-nowrap bg-neutral-50/50">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleInitiateEdit(r)}
+                            className="p-1.5 bg-white hover:bg-amber-50 text-neutral-600 hover:text-amber-700 rounded-lg border border-neutral-200 hover:border-amber-300 shadow-2xs transition-all cursor-pointer"
+                            title="Editar lançamento na planilha"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleInitiateDelete(r)}
+                            className="p-1.5 bg-white hover:bg-red-50 text-neutral-600 hover:text-red-700 rounded-lg border border-neutral-200 hover:border-red-300 shadow-2xs transition-all cursor-pointer"
+                            title="Excluir lançamento da planilha"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1082,8 +1261,11 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                   <td className="py-2.5 px-2 text-right font-mono font-bold text-amber-800 border-r border-neutral-300 text-[10px]">
                     {totalVolume > 0 && totalFinanceiro > 0 ? `Méd. ${formatCurrencyBRL(totalFinanceiro / totalVolume)}/L` : '-'}
                   </td>
-                  <td className="py-2.5 px-2 text-right font-mono font-black text-emerald-700 whitespace-nowrap bg-emerald-100/50">
+                  <td className="py-2.5 px-2 border-r border-neutral-300 text-right font-mono font-black text-emerald-700 whitespace-nowrap bg-emerald-100/50">
                     {totalFinanceiro > 0 ? formatCurrencyBRL(totalFinanceiro) : 'R$ 0,00'}
+                  </td>
+                  <td className="py-2.5 px-2 text-center text-neutral-400 bg-neutral-100">
+                    -
                   </td>
                 </tr>
               </tfoot>
@@ -1129,6 +1311,36 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
         gasConfig={gasConfig}
         defaultStartDate={startDate}
         defaultEndDate={endDate || startDate}
+      />
+
+      {/* Edit Receipt Modal */}
+      <EditReceiptModal
+        isOpen={Boolean(editingRecord)}
+        onClose={() => setEditingRecord(null)}
+        record={editingRecord}
+        onSave={handleSaveEdit}
+        isSaving={isSavingEdit}
+      />
+
+      {/* Delete Receipt Confirmation Modal */}
+      <DeleteReceiptModal
+        isOpen={Boolean(deletingRecord)}
+        onClose={() => setDeletingRecord(null)}
+        record={deletingRecord}
+        onConfirm={handleConfirmDelete}
+        isDeleting={isDeletingRow}
+      />
+
+      {/* Operator Password Authentication Modal */}
+      <OperatorAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setPendingAuthAction(null);
+        }}
+        onSuccess={handleAuthSuccess}
+        title={authModalTitle}
+        subtitle={authModalSubtitle}
       />
     </div>
   );

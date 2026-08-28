@@ -408,7 +408,7 @@ export async function fetchRecordsFromSheet(webhookUrl?: string, sheetUrl?: stri
 
 /**
  * Main Full-Stack Pipeline:
- * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini 3.7) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ FRONT (Espelho)
+ * FRONT (Foto Capturada) ➡️ DRIVER (Google Drive) ➡️ BACK (Extração IA Gemini Flash-Lite) ➡️ SHEETS (Gravação em Dados_Raizen) ➡️ FRONT (Espelho)
  */
 export async function processReceiptPipeline(
   base64DataUrl: string,
@@ -788,4 +788,210 @@ export async function updateFuelPricesInSheet(
     };
   }
 }
+
+/**
+ * Updates a specific receipt record in Google Sheets via proxy / direct Apps Script
+ */
+export async function updateReceiptRecordInSheet(
+  webhookUrl: string | undefined,
+  secretToken: string | undefined,
+  record: AbastecimentoRecord,
+  oldNumero?: string
+): Promise<{ sucesso: boolean; mensagem: string }> {
+  const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+  if (!targetUrl) {
+    return {
+      sucesso: false,
+      mensagem: 'URL do Google Apps Script não configurada.',
+    };
+  }
+
+  // Parse row index from id (e.g. sheet-row-82-2393379 -> 82)
+  let rowNumber: number | undefined;
+  if (record.id) {
+    const match = record.id.match(/sheet-row-(\d+)/);
+    if (match && match[1]) {
+      rowNumber = parseInt(match[1], 10);
+    }
+  }
+
+  const payload = {
+    action: 'update_row',
+    oldNumero: oldNumero || record.numero,
+    rowNumber: rowNumber,
+    numero: record.numero,
+    dataAbastecimento: record.dataAbastecimento,
+    formaPagamento: record.formaPagamento,
+    cliente: record.cliente,
+    horaChegada: record.horaChegada,
+    inicioAbastecimento: record.inicioAbastecimento,
+    terminoAbastecimento: record.terminoAbastecimento,
+    produto: record.produto,
+    volume: record.volume,
+    obs: record.obs,
+    assinaturaCliente: record.assinaturaCliente,
+    driveFileUrl: record.driveFileUrl,
+    valorLitro: record.valorLitro,
+    valorTotal: record.valorTotal,
+    timestamp: new Date().toISOString(),
+  };
+
+  // 1. Try server proxy first
+  try {
+    const res = await fetch('/api/update-sheet-record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookUrl: targetUrl,
+        secretToken: secretToken?.trim(),
+        record: payload,
+        oldNumero: oldNumero || record.numero,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.sucesso !== false) {
+        return {
+          sucesso: true,
+          mensagem: data.mensagem || 'Lançamento atualizado na planilha com sucesso!',
+        };
+      } else if (data && data.mensagem) {
+        return {
+          sucesso: false,
+          mensagem: data.mensagem,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Update Record] Proxy attempt failed, attempting direct fetch:', err.message);
+  }
+
+  // 2. Direct browser fallback call
+  try {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const effectiveToken = secretToken?.trim();
+    const directUrl = effectiveToken
+      ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}`
+      : targetUrl;
+
+    const fullPayload = {
+      ...payload,
+      ...(effectiveToken ? { token: effectiveToken } : {}),
+    };
+
+    await fetch(directUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(fullPayload),
+      mode: 'no-cors',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Comando de atualização enviado para a planilha!',
+    };
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      mensagem: `Erro ao enviar atualização: ${err.message}`,
+    };
+  }
+}
+
+/**
+ * Deletes a specific receipt record from Google Sheets via proxy / direct Apps Script
+ */
+export async function deleteReceiptRecordFromSheet(
+  webhookUrl: string | undefined,
+  secretToken: string | undefined,
+  record: AbastecimentoRecord
+): Promise<{ sucesso: boolean; mensagem: string }> {
+  const targetUrl = webhookUrl?.trim() || DEFAULT_WEBHOOK_URL;
+  if (!targetUrl) {
+    return {
+      sucesso: false,
+      mensagem: 'URL do Google Apps Script não configurada.',
+    };
+  }
+
+  // Parse row index from id (e.g. sheet-row-82-2393379 -> 82)
+  let rowNumber: number | undefined;
+  if (record.id) {
+    const match = record.id.match(/sheet-row-(\d+)/);
+    if (match && match[1]) {
+      rowNumber = parseInt(match[1], 10);
+    }
+  }
+
+  const payload = {
+    action: 'delete_row',
+    numero: record.numero,
+    rowNumber: rowNumber,
+    timestamp: new Date().toISOString(),
+  };
+
+  // 1. Try server proxy first
+  try {
+    const res = await fetch('/api/delete-sheet-record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookUrl: targetUrl,
+        secretToken: secretToken?.trim(),
+        numero: record.numero,
+        rowNumber: rowNumber,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.sucesso !== false) {
+        return {
+          sucesso: true,
+          mensagem: data.mensagem || 'Lançamento excluído da planilha com sucesso!',
+        };
+      } else if (data && data.mensagem) {
+        return {
+          sucesso: false,
+          mensagem: data.mensagem,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Delete Record] Proxy attempt failed, attempting direct fetch:', err.message);
+  }
+
+  // 2. Direct browser fallback call
+  try {
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const effectiveToken = secretToken?.trim();
+    const directUrl = effectiveToken
+      ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}`
+      : targetUrl;
+
+    const fullPayload = {
+      ...payload,
+      ...(effectiveToken ? { token: effectiveToken } : {}),
+    };
+
+    await fetch(directUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(fullPayload),
+      mode: 'no-cors',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: 'Comando de exclusão enviado para a planilha!',
+    };
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      mensagem: `Erro ao enviar exclusão: ${err.message}`,
+    };
+  }
+}
+
 

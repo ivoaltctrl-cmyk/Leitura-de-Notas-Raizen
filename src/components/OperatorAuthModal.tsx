@@ -5,6 +5,8 @@ interface OperatorAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  title?: string;
+  subtitle?: string;
 }
 
 const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
@@ -14,6 +16,8 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  title = 'Acesso à Operação',
+  subtitle = 'Digite a senha de operador para autorizar a ação no sistema.',
 }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -82,10 +86,10 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
             <Lock className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-neutral-900">
-            Acesso à Captura de Nota
+            {title}
           </h3>
           <p className="text-xs text-neutral-500 mt-1">
-            Digite a senha para autorizar a captura e o envio de comprovantes ao Google Drive.
+            {subtitle}
           </p>
         </div>
 

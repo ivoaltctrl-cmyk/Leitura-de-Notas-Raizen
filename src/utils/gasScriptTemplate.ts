@@ -127,7 +127,21 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 4. Executar Robô de IA manualmente (On-Demand) via Webhook
+    // 4. Edição / Atualização de um Lançamento Específico na Planilha
+    if (data.action === 'update_row' || data.action === 'edit_record' || data.action === 'atualizar_registro') {
+      var resEdit = atualizarRegistroLinha(data);
+      return ContentService.createTextOutput(JSON.stringify(resEdit))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 5. Exclusão de um Lançamento Específico na Planilha
+    if (data.action === 'delete_row' || data.action === 'delete_record' || data.action === 'excluir_registro') {
+      var resDel = excluirRegistroLinha(data);
+      return ContentService.createTextOutput(JSON.stringify(resDel))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 6. Executar Robô de IA manualmente (On-Demand) via Webhook
     if (data.action === 'processar_agora' || data.action === 'processar_fila' || data.action === 'executar_robo') {
       try {
         if (typeof processarPastaAbastecimentos === 'function') {
@@ -533,6 +547,164 @@ function lerRegistrosPlanilha() {
   } catch (e) {
     return [];
   }
+}
+
+/**
+ * Atualiza os dados de uma linha específica na aba "Dados_Raizen"
+ */
+function atualizarRegistroLinha(data) {
+  var NOME_ABA = "Dados_Raizen";
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      var scriptProperties = PropertiesService.getScriptProperties();
+      var sheetId = scriptProperties.getProperty('SPREADSHEET_ID');
+      if (sheetId) ss = SpreadsheetApp.openById(sheetId);
+    }
+    if (!ss) return { sucesso: false, mensagem: "Planilha não encontrada." };
+
+    var sheet = ss.getSheetByName(NOME_ABA);
+    if (!sheet) return { sucesso: false, mensagem: "Aba '" + NOME_ABA + "' não encontrada." };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { sucesso: false, mensagem: "Nenhum lançamento encontrado na planilha para atualizar." };
+    }
+
+    var targetNumero = String(data.oldNumero || data.numeroOriginal || data.numero || "").trim();
+    var newNumero = String(data.numero || "").trim();
+    var rowIdx = -1;
+
+    // Se veio rowNumber explícito no payload
+    if (data.rowNumber && typeof data.rowNumber === 'number' && data.rowNumber >= 2 && data.rowNumber <= lastRow) {
+      rowIdx = data.rowNumber;
+    }
+
+    // Busca pela coluna A (Número da Nota / OS)
+    if (rowIdx === -1 && targetNumero) {
+      var numValues = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+      for (var i = 0; i < numValues.length; i++) {
+        var cellVal = String(numValues[i][0] || "").trim();
+        if (cellVal === targetNumero || (newNumero && cellVal === newNumero)) {
+          rowIdx = i + 2;
+          break;
+        }
+      }
+    }
+
+    if (rowIdx === -1) {
+      return { sucesso: false, mensagem: "Lançamento com Número '" + (targetNumero || newNumero) + "' não encontrado na planilha." };
+    }
+
+    // Extrai valores a atualizar
+    if (data.numero !== undefined) sheet.getRange(rowIdx, 1).setValue(String(data.numero));
+    if (data.dataAbastecimento !== undefined) sheet.getRange(rowIdx, 2).setValue(String(data.dataAbastecimento));
+    if (data.formaPagamento !== undefined) sheet.getRange(rowIdx, 3).setValue(String(data.formaPagamento));
+    if (data.cliente !== undefined) sheet.getRange(rowIdx, 4).setValue(String(data.cliente));
+    if (data.horaChegada !== undefined) sheet.getRange(rowIdx, 5).setValue(String(data.horaChegada));
+    if (data.inicioAbastecimento !== undefined) sheet.getRange(rowIdx, 6).setValue(String(data.inicioAbastecimento));
+    if (data.terminoAbastecimento !== undefined) sheet.getRange(rowIdx, 7).setValue(String(data.terminoAbastecimento));
+    if (data.produto !== undefined) sheet.getRange(rowIdx, 8).setValue(String(data.produto));
+    
+    // Volume formatado
+    if (data.volume !== undefined) {
+      var volStr = String(data.volume).trim().replace(',', '.');
+      var volFloat = parseFloat(volStr);
+      if (!isNaN(volFloat)) {
+        sheet.getRange(rowIdx, 9).setValue(volFloat.toFixed(2).replace('.', ','));
+      } else {
+        sheet.getRange(rowIdx, 9).setValue(String(data.volume));
+      }
+    }
+
+    if (data.obs !== undefined) sheet.getRange(rowIdx, 10).setValue(String(data.obs));
+    if (data.assinaturaCliente !== undefined) sheet.getRange(rowIdx, 11).setValue(String(data.assinaturaCliente));
+    if (data.driveFileUrl !== undefined && data.driveFileUrl) sheet.getRange(rowIdx, 12).setValue(String(data.driveFileUrl));
+
+    // Valor/Litro e Valor Total (Colunas M e N)
+    if (data.valorLitro !== undefined || data.valorTotal !== undefined) {
+      var vLitroStr = String(data.valorLitro || "").replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.');
+      var vLitroNum = parseFloat(vLitroStr);
+      var volCurrentStr = String(data.volume !== undefined ? data.volume : sheet.getRange(rowIdx, 9).getValue()).replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.');
+      var volCurrentNum = parseFloat(volCurrentStr);
+
+      if (!isNaN(vLitroNum) && vLitroNum > 0) {
+        sheet.getRange(rowIdx, 13).setValue("R$ " + vLitroNum.toFixed(2).replace('.', ','));
+        if (!isNaN(volCurrentNum) && volCurrentNum > 0) {
+          var tot = Math.round(vLitroNum * volCurrentNum * 100) / 100;
+          sheet.getRange(rowIdx, 14).setValue("R$ " + tot.toFixed(2).replace('.', ','));
+        }
+      } else if (data.valorTotal) {
+        sheet.getRange(rowIdx, 14).setValue(String(data.valorTotal));
+      }
+    }
+
+    return {
+      sucesso: true,
+      mensagem: "Lançamento Nº " + (newNumero || targetNumero) + " atualizado com sucesso na planilha (Linha " + rowIdx + ")!",
+      row: rowIdx
+    };
+  } catch (err) {
+    return { sucesso: false, mensagem: "Erro ao atualizar registro na planilha: " + err.message };
+  }
+}
+
+/**
+ * Exclui a linha de um lançamento na aba "Dados_Raizen"
+ */
+function excluirRegistroLinha(data) {
+  var NOME_ABA = "Dados_Raizen";
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      var scriptProperties = PropertiesService.getScriptProperties();
+      var sheetId = scriptProperties.getProperty('SPREADSHEET_ID');
+      if (sheetId) ss = SpreadsheetApp.openById(sheetId);
+    }
+    if (!ss) return { sucesso: false, mensagem: "Planilha não encontrada." };
+
+    var sheet = ss.getSheetByName(NOME_ABA);
+    if (!sheet) return { sucesso: false, mensagem: "Aba '" + NOME_ABA + "' não encontrada." };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return { sucesso: false, mensagem: "Nenhum lançamento encontrado na planilha para excluir." };
+    }
+
+    var targetNumero = String(data.numero || data.numeroOriginal || "").trim();
+    var rowIdx = -1;
+
+    // Se veio rowNumber explícito no payload
+    if (data.rowNumber && typeof data.rowNumber === 'number' && data.rowNumber >= 2 && data.rowNumber <= lastRow) {
+      rowIdx = data.rowNumber;
+    }
+
+    // Busca pela coluna A (Número da Nota / OS)
+    if (rowIdx === -1 && targetNumero) {
+      var numValues = sheet.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+      for (var i = 0; i < numValues.length; i++) {
+        var cellVal = String(numValues[i][0] || "").trim();
+        if (cellVal === targetNumero) {
+          rowIdx = i + 2;
+          break;
+        }
+      }
+    }
+
+    if (rowIdx === -1) {
+      return { sucesso: false, mensagem: "Lançamento com Número '" + targetNumero + "' não encontrado na planilha para exclusão." };
+    }
+
+    sheet.deleteRow(rowIdx);
+
+    return {
+      sucesso: true,
+      mensagem: "Lançamento Nº " + targetNumero + " excluído com sucesso da planilha (Linha " + rowIdx + ")!",
+      row: rowIdx
+    };
+  } catch (err) {
+    return { sucesso: false, mensagem: "Erro ao excluir linha da planilha: " + err.message };
+  }
 }`;
 
 export const SCRIPT_CODIGO_GS = `/**
@@ -550,8 +722,8 @@ var ABASTECIMENTO_CONFIG = {
   MAX_FILE_SIZE_MB: 8
 };
 
-// Modelo configurado e validado
-var GEMINI_MODEL_ABASTECIMENTO = 'gemini-3.5-flash';
+// Modelo configurado para alta volumetria e velocidade
+var GEMINI_MODEL_ABASTECIMENTO = 'gemini-2.5-flash-lite';
 
 function processarPastaAbastecimentos(limiteLote) {
   var lock = LockService.getScriptLock();
@@ -651,21 +823,45 @@ function processarUmaNotaAbastecimento(file, apiKey, fileUrl) {
 }
 
 function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
-  var prompt = 'Você está analisando a imagem de uma NOTA DE ABASTECIMENTO de combustível ' +
-    '(comprovante emitido pela Raízen/Shell, usado em abastecimento de veículos/equipamentos em aeroporto WFS). ' +
-    'Leia os campos visíveis com máxima atenção e responda EXCLUSIVAMENTE com um JSON válido, sem markdown ou texto extra: ' +
-    '{' +
-    '  "numero": "string ou null (Número da nota ou OS)", ' +
-    '  "dataAbastecimento": "DD/MM/AAAA ou null (Data do abastecimento impressa na nota, ex: 26/08/2026)", ' +
-    '  "formaPagamento": "string ou null (ex: CONTRATO, FATURADO, A VISTA)", ' +
-    '  "cliente": "string ou null (Razão social / Nome da empresa cliente)", ' +
-    '  "horaChegada": "HH:mm ou null", ' +
-    '  "inicioAbastecimento": "HH:mm ou null", ' +
-    '  "terminoAbastecimento": "HH:mm ou null", ' +
-    '  "produto": "string ou null (ex: DIESEL, DIESEL S10, JET A-1)", ' +
-    '  "volume": number ou null (Quantidade em litros abastecida, ex: 60.00)", ' +
-    '  "obs": "string ou null (Prefixo, placa ou equipamento)", ' +
-    '  "assinaturaCliente": "string ou null (Nome legível e matrícula de quem assinou)"' +
+  var prompt = 'Você é um especialista em OCR e auditoria de NOTAS E COMPROVANTES DE ABASTECIMENTO de combustível da Raízen / Shell / WFS Aviation Ground Handling.\n' +
+    'Analise a imagem com precisão cirúrgica de 100%, sem alucinações, sem suposições e sem arredondamentos arbitrários.\n\n' +
+    '=== REGRAS OBRIGATÓRIAS DE EXTRAÇÃO ===\n' +
+    '1. VOLUME (QUANTIDADE ABASTECIDA):\n' +
+    '   - Deve ser SEMPRE um número com 2 casas decimais (ex: 35.00, 37.00, 120.50).\n' +
+    '   - Se a nota exibir "37" ou "37.000" ou "37,00", registre estritamente 37.00.\n' +
+    '   - Se o valor impresso na nota tiver 3 casas decimais (ex: "35.000"), converta para 35.00.\n' +
+    '   - Verifique a prova real: Volume = Valor Total / Preço Unitário para desempatar números embaçados (ex: 3 vs 8, 5 vs 6).\n\n' +
+    '2. OBSERVAÇÃO / EQUIPAMENTO / PREFIXO (FEW-SHOT EXAMPLES DA OPERAÇÃO):\n' +
+    '   - Copie exatamente os caracteres de identificação do equipamento, rampa, prefixo e placa.\n' +
+    '   - EXEMPLOS REAIS DE PADRÃO:\n' +
+    '     * "GASOL XXD / TZ01A81" -> registre exatamente "GASOL XXD / TZ01A81" (não confunda Z com T ou 1 com I).\n' +
+    '     * "GASOL XXD / TZT8..." -> confira se é a placa "TZ01A81" ou similar.\n' +
+    '     * "QTA-01", "GPU-04", "TRATOR-12", "REBOCADOR 03", "VAN-08".\n' +
+    '     * Mantenha letras maiúsculas e números sem trocar caracteres alfanuméricos.\n\n' +
+    '3. HORÁRIOS (CHEGADA, INÍCIO, TÉRMINO):\n' +
+    '   - Formato estrito HH:mm (24 horas, ex: 12:51, 16:14, 16:15).\n' +
+    '   - Extraia com exatidão a hora da chegada, o início do abastecimento e o término do abastecimento.\n\n' +
+    '4. NÚMERO DA NOTA:\n' +
+    '   - Sequência numérica única impressa no cabeçalho ou campo Número/OS (ex: "2393379", "2393515").\n\n' +
+    '5. DATA DO ABASTECIMENTO:\n' +
+    '   - Formato DD/MM/AAAA (ex: "27/08/2026").\n\n' +
+    '6. CLIENTE & PRODUTO:\n' +
+    '   - Cliente: Razão social ou nome impresso (ex: "ORBITAL SERV AUX TRANSP AEREO", "WFS", "GOL", "LATAM", "AZUL").\n' +
+    '   - Produto: "GASOLINA", "DIESEL S10", "DIESEL", "JET A-1", etc.\n' +
+    '   - Forma de Pagamento: "CONTRATO", "FATURADO", "A VISTA", etc.\n\n' +
+    'Responda EXCLUSIVAMENTE com o JSON estruturado abaixo, sem markdown e sem comentários:\n' +
+    '{\n' +
+    '  "numero": "string ou null",\n' +
+    '  "dataAbastecimento": "DD/MM/AAAA ou null",\n' +
+    '  "formaPagamento": "string ou null",\n' +
+    '  "cliente": "string ou null",\n' +
+    '  "horaChegada": "HH:mm ou null",\n' +
+    '  "inicioAbastecimento": "HH:mm ou null",\n' +
+    '  "terminoAbastecimento": "HH:mm ou null",\n' +
+    '  "produto": "string ou null",\n' +
+    '  "volume": number ou null,\n' +
+    '  "obs": "string ou null",\n' +
+    '  "assinaturaCliente": "string ou null"\n' +
     '}';
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL_ABASTECIMENTO + ':generateContent?key=' + apiKey;
 
@@ -676,7 +872,12 @@ function extractFuelReceiptDataWithGemini(imageBase64, mediaType, apiKey) {
         { inline_data: { mime_type: mediaType, data: imageBase64 } }
       ]
     }],
-    generationConfig: { responseMimeType: 'application/json' }
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.0,
+      topP: 0.1,
+      maxOutputTokens: 1024
+    }
   };
 
   // SISTEMA DE RE-TENTATIVAS EM CASO DE ERRO 429

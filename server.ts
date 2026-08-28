@@ -150,25 +150,37 @@ async function extractReceiptWithGemini(base64: string, mimeType: string) {
 
   const ai = getGeminiClient();
 
-  const prompt = `Você é um especialista de alta precisão em leitura e extração de ordens de serviço e comprovantes de abastecimento de combustível e aviação (WFS / Raízen).
-Analise a imagem da nota de abastecimento fornecida e extraia exatamente as informações necessárias para as colunas da planilha oficial "Dados_Raizen":
+  const prompt = `Você é um especialista de máxima precisão em auditoria e extração OCR de ordens de serviço e comprovantes de abastecimento de combustível (WFS / Raízen / Shell).
+Analise a imagem da nota de abastecimento com rigor absoluto, sem inventar dados e sem arredondamentos arbitrários.
 
-Campos obrigatórios:
-1. "numero": Número da nota / Ordem de Serviço / Nro OS (ex: "2293305" ou "123456")
-2. "dataAbastecimento": Data do abastecimento no formato DD/MM/AAAA (ex: "26/08/2026"). Se não houver ano explícito, use a data atual.
-3. "formaPagamento": Forma de pagamento (ex: "CONTRATO", "A VISTA", "FATURADO", "BOLETO", "CARTAO", "CREDITO", "CONVENIO")
-4. "cliente": Razão social / Nome do cliente ou empresa atendida (ex: "ORBITAL SERV AUX TRANSP AEREO", "SWISSPORT", "DNATA", "GOL", "LATAM", "AZUL")
-5. "horaChegada": Horário de chegada no formato HH:MM (ex: "07:13" ou "10:15")
-6. "inicioAbastecimento": Horário de início do abastecimento no formato HH:MM (ex: "07:14" ou "10:20")
-7. "terminoAbastecimento": Horário de término / fim do abastecimento no formato HH:MM (ex: "07:22" ou "10:35"). Se não houver horário explícito de término, deduza com base no início + tempo estimado ou deixe vazio.
-8. "produto": Tipo de combustível / produto (ex: "DIESEL", "DIESEL S10", "JET A-1", "GASOLINA", "AVGAS")
-9. "volume": Quantidade / volume abastecido em Litros formatado com vírgula (ex: "224,00" ou "1.450,00" ou "50,00")
-10. "obs": Observações, prefixo de aeronave, placa, gerador ou equipamento (ex: "GE135", "TRATOR T-04 / PR-GUZ", "REBOCADOR RB-09")
-11. "assinaturaCliente": Nome legível e matrícula de quem assinou / conferiu (ex: "joanilson 304371" ou "marcos 441029")
-12. "confidenceNotes": Breve resumo da qualidade visual da leitura.`;
+=== REGRAS DE EXTRAÇÃO E FEW-SHOT DA OPERAÇÃO ===
+1. "volume" (QUANTIDADE ABASTECIDA):
+   - Deve ser SEMPRE formatado com 2 casas decimais no padrão brasileiro (ex: "35,00", "37,00", "120,50").
+   - Se na nota constar "37" ou "37.000" ou "37,00", registre explicitamente "37,00".
+   - Verifique a prova real: Volume = Valor Total / Preço Unitário para desempatar visualmente números difíceis (ex: 3 vs 8, 5 vs 6).
+
+2. "obs" (EQUIPAMENTO, PLACA, PREFIXO - FEW-SHOT):
+   - Mantenha a sequência exata de letras e números do equipamento ou placa.
+   - Exemplos de padrões da operação: "GASOL XXD / TZ01A81", "GASOL XXD", "QTA-01", "GPU-04", "TRATOR-12", "REBOCADOR 03", "VAN-08".
+   - Não confunda Z com T, nem 1 com I ou O com 0.
+
+3. "numero": Número da nota / Ordem de Serviço / Nro OS (ex: "2393379", "2393515").
+
+4. "dataAbastecimento": Formato DD/MM/AAAA (ex: "27/08/2026"). Se não constar, use a data atual.
+
+5. "horaChegada", "inicioAbastecimento", "terminoAbastecimento":
+   - Formato HH:MM (ex: "12:51", "16:14", "16:15").
+
+6. "formaPagamento": Forma de pagamento (ex: "CONTRATO", "FATURADO", "A VISTA", "BOLETO").
+
+7. "cliente": Razão social / Cliente (ex: "ORBITAL SERV AUX TRANSP AEREO", "WFS", "GOL", "LATAM", "AZUL").
+
+8. "produto": Produto / Combustível (ex: "GASOLINA", "DIESEL", "DIESEL S10", "JET A-1").
+
+9. "assinaturaCliente": Nome legível e matrícula de quem assinou / conferiu.`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3.7-flash',
+    model: 'gemini-2.5-flash-lite',
     contents: {
       parts: [
         {
@@ -184,6 +196,8 @@ Campos obrigatórios:
     },
     config: {
       responseMimeType: 'application/json',
+      temperature: 0.0,
+      topP: 0.1,
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -195,7 +209,7 @@ Campos obrigatórios:
           inicioAbastecimento: { type: Type.STRING, description: 'Início do abastecimento HH:MM (Coluna F)' },
           terminoAbastecimento: { type: Type.STRING, description: 'Término do abastecimento HH:MM (Coluna G)' },
           produto: { type: Type.STRING, description: 'Produto/Combustível (Coluna H)' },
-          volume: { type: Type.STRING, description: 'Volume abastecido em litros ex: 224,00 (Coluna I)' },
+          volume: { type: Type.STRING, description: 'Volume abastecido em litros com 2 decimais ex: 35,00 ou 37,00 (Coluna I)' },
           obs: { type: Type.STRING, description: 'Observações, placa, equipamento (Coluna J)' },
           assinaturaCliente: { type: Type.STRING, description: 'Assinatura e matrícula do cliente (Coluna K)' },
           confidenceNotes: { type: Type.STRING, description: 'Notas de confiança da leitura' },
@@ -1183,6 +1197,154 @@ app.post('/api/update-fuel-prices', async (req, res) => {
     res.json({
       sucesso: false,
       mensagem: `Erro ao atualizar valores: ${error.message || 'Falha de comunicação'}`,
+    });
+  }
+});
+
+// Endpoint to update a specific record row in Google Sheets
+app.post('/api/update-sheet-record', async (req, res) => {
+  try {
+    const { webhookUrl, secretToken, record, oldNumero } = req.body || {};
+    const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
+
+    if (!targetUrl) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'URL do Google Apps Script não informada.',
+      });
+    }
+
+    if (!record) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Dados do lançamento para atualização não informados.',
+      });
+    }
+
+    const effectiveToken = (secretToken || cachedConfig.secretToken || '').trim();
+    const payload: any = {
+      action: 'update_row',
+      oldNumero: oldNumero || record.numeroOriginal || record.numero,
+      ...record,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (effectiveToken) {
+      payload.token = effectiveToken;
+    }
+
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const targetUrlWithToken = effectiveToken ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}` : targetUrl;
+
+    console.log(`[Update Row] Atualizando lançamento Nº ${record.numero} (antigo: ${oldNumero || record.numero})...`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+    const response = await fetch(targetUrlWithToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const responseText = await response.text();
+    let responseData: any;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      responseData = { raw: responseText };
+    }
+
+    const isSuccess = response.ok && responseData?.sucesso !== false;
+
+    res.json({
+      sucesso: isSuccess,
+      mensagem: responseData?.mensagem || (isSuccess ? 'Lançamento atualizado na planilha com sucesso!' : 'Falha ao atualizar lançamento.'),
+      data: responseData,
+    });
+  } catch (error: any) {
+    console.error('Erro ao atualizar lançamento no Apps Script:', error);
+    res.json({
+      sucesso: false,
+      mensagem: `Erro ao atualizar lançamento: ${error.message || 'Falha de comunicação'}`,
+    });
+  }
+});
+
+// Endpoint to delete a specific record row from Google Sheets
+app.post('/api/delete-sheet-record', async (req, res) => {
+  try {
+    const { webhookUrl, secretToken, numero, rowNumber } = req.body || {};
+    const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
+
+    if (!targetUrl) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'URL do Google Apps Script não informada.',
+      });
+    }
+
+    if (!numero && !rowNumber) {
+      return res.status(400).json({
+        sucesso: false,
+        mensagem: 'Número da nota/OS do lançamento é obrigatório para exclusão.',
+      });
+    }
+
+    const effectiveToken = (secretToken || cachedConfig.secretToken || '').trim();
+    const payload: any = {
+      action: 'delete_row',
+      numero: String(numero || '').trim(),
+      rowNumber: rowNumber || undefined,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (effectiveToken) {
+      payload.token = effectiveToken;
+    }
+
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    const targetUrlWithToken = effectiveToken ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}` : targetUrl;
+
+    console.log(`[Delete Row] Excluindo lançamento Nº ${numero} da planilha...`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+    const response = await fetch(targetUrlWithToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const responseText = await response.text();
+    let responseData: any;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      responseData = { raw: responseText };
+    }
+
+    const isSuccess = response.ok && responseData?.sucesso !== false;
+
+    res.json({
+      sucesso: isSuccess,
+      mensagem: responseData?.mensagem || (isSuccess ? 'Lançamento excluído da planilha com sucesso!' : 'Falha ao excluir lançamento.'),
+      data: responseData,
+    });
+  } catch (error: any) {
+    console.error('Erro ao excluir lançamento no Apps Script:', error);
+    res.json({
+      sucesso: false,
+      mensagem: `Erro ao excluir lançamento: ${error.message || 'Falha de comunicação'}`,
     });
   }
 });
