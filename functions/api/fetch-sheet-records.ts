@@ -44,6 +44,8 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
         obs: r.obs || r['Obs.:'] || r['Obs'] || '',
         assinaturaCliente: r.assinaturaCliente || r['Assinatura do Cliente'] || '',
         driveFileUrl: r.driveFileUrl || r.driveUrl || r.fileUrl || r['Foto da Nota'] || '',
+        valorLitro: r.valorLitro || r['Valor/Litro'] || r['Valor Litro'] || '',
+        valorTotal: r.valorTotal || r['Valor Total'] || '',
         dataCriacao: r.dataCriacao || new Date().toISOString(),
         statusEnvio: 'enviado_drive',
         statusMsg: 'Sincronizado da planilha Dados_Raizen',
