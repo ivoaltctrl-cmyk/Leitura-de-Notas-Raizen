@@ -562,7 +562,7 @@ function parseCSVRows(csvText: string) {
         cells.push(currentCell.trim());
         currentCell = '';
       } else {
-        cells.push(currentCell.trim());
+        currentCell += char;
       }
     }
     cells.push(currentCell.trim());
