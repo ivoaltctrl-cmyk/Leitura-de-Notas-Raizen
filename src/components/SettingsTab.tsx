@@ -637,49 +637,93 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <Code className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-neutral-900">Código do Google Apps Script (Código.gs)</h3>
-              <p className="text-xs text-neutral-500">Script unificado com Webhook, Integração Planilha e Robô Gemini 2.5 Flash Lite.</p>
+              <h3 className="text-sm font-bold text-neutral-900">Scripts Padrões do Google Apps Script</h3>
+              <p className="text-xs text-neutral-500">Arquivos oficiais separados para o Webhook e o Robô de IA Gemini.</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={handleCopyCode}
-            className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 active:bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 shadow-xs"
+            className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 active:bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 shadow-xs"
           >
             {copiedCode ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-            <span>{copiedCode ? 'Código Copiado!' : 'Copiar Código.gs Completo'}</span>
+            <span>{copiedCode ? 'Código Copiado!' : activeScriptTab === 'webhook' ? 'Copiar webhook.gs' : 'Copiar Código.gs'}</span>
+          </button>
+        </div>
+
+        {/* Script Tabs Switcher */}
+        <div className="flex border-b border-neutral-200 gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveScriptTab('webhook')}
+            className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+              activeScriptTab === 'webhook'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+            1. webhook.gs (Comunicação / Leitura)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveScriptTab('codigo')}
+            className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+              activeScriptTab === 'codigo'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+            2. Código.gs (Scanner Gemini IA)
           </button>
         </div>
 
         {/* Script Code Viewer */}
         <div className="relative">
           <pre className="bg-neutral-900 text-neutral-200 p-4 rounded-xl text-[11px] font-mono overflow-x-auto max-h-80 leading-relaxed">
-            {SCRIPT_CODIGO_GS}
+            {activeScriptTab === 'webhook' ? SCRIPT_WEBHOOK_GS : SCRIPT_CODIGO_GS}
           </pre>
         </div>
 
-        {/* Dynamic Instructions */}
-        <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3">
-          <h4 className="text-xs font-bold text-neutral-800 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            Como instalar e ativar o Código.gs na sua planilha:
-          </h4>
-          <ol className="text-xs text-neutral-600 space-y-2 pl-4 list-decimal">
-            <li>Abra sua planilha Google Sheets e acesse o menu <strong>Extensões ➔ Apps Script</strong>.</li>
-            <li>No arquivo <strong>Código.gs</strong> (o arquivo padrão do projeto), apague qualquer conteúdo antigo e cole o código copiado acima.</li>
-            <li>Clique no ícone de <strong>Salvar (💾 ou Ctrl+S)</strong>.</li>
-            <li>Acesse <strong>Configurações do Projeto (Ícone de engrenagem ⚙️) ➔ Propriedades do Script</strong> e confirme:
-              <ul className="list-disc pl-4 mt-1 space-y-0.5 font-mono text-[11px] text-neutral-700">
-                <li><code>GEMINI_API_KEY</code> = Sua chave de API do Gemini</li>
-                <li><code>DRIVE_FOLDER_ID</code> = ID da pasta do Drive (<code>1n2_zU5-2DG7tih314twOcf6lRSXZeFkc</code>)</li>
-                <li><code>SPREADSHEET_ID</code> = ID da sua planilha</li>
-              </ul>
-            </li>
-            <li>Para publicar o Webhook: Clique em <strong>Implantar ➔ Gerenciar implantações ➔ Editar (Lápis) ➔ Nova Versão ➔ Implantar</strong>.</li>
-            <li>Para o Robô automático periódico: Acesse <strong>Acionadores (Ícone de relógio ⏰) ➔ Adicionar acionador</strong> ➔ Função <code>processarPastaAbastecimentos</code> ➔ Baseado em tempo (a cada 1 ou 5 min).</li>
-          </ol>
-        </div>
+        {/* Dynamic Instructions per tab */}
+        {activeScriptTab === 'webhook' ? (
+          <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
+            <h4 className="text-xs font-bold text-neutral-800 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+              Como implantar o webhook.gs:
+            </h4>
+            <ol className="text-xs text-neutral-600 space-y-1.5 pl-4 list-decimal">
+              <li>No Google Apps Script da sua planilha, abra ou crie o arquivo <code className="font-mono bg-neutral-200/70 px-1 py-0.5 rounded text-neutral-900">webhook.gs</code>.</li>
+              <li>Cole o código copiado acima e confirme o <code className="font-mono text-neutral-900">FOLDER_ID = "1n2_zU5-2DG7tih314twOcf6lRSXZeFkc"</code>.</li>
+              <li>Clique em <strong>Salvar (💾 ou Ctrl+S)</strong>.</li>
+              <li>Clique em <strong>Implantar ➔ Gerenciar implantações ➔ Editar (Ícone de lápis)</strong>.</li>
+              <li>Selecione <strong>Nova versão</strong> e clique em <strong>Implantar</strong>.</li>
+              <li>Copie a URL do Web App gerada (terminada em <code className="font-mono bg-neutral-200/70 px-1 py-0.5 rounded text-neutral-900">/exec</code>) e cole no campo acima nesta tela.</li>
+            </ol>
+          </div>
+        ) : (
+          <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
+            <h4 className="text-xs font-bold text-neutral-800 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+              Como configurar o Código.gs (Gemini IA):
+            </h4>
+            <ol className="text-xs text-neutral-600 space-y-1.5 pl-4 list-decimal">
+              <li>No mesmo projeto Apps Script, abra ou crie o arquivo <code className="font-mono bg-neutral-200/70 px-1 py-0.5 rounded text-neutral-900">Código.gs</code> e cole o código acima.</li>
+              <li>Clique em <strong>Salvar (💾 ou Ctrl+S)</strong>.</li>
+              <li>Acesse <strong>Configurações do Projeto (Ícone de engrenagem ⚙️) ➔ Propriedades do Script</strong> e adicione/confirme:
+                <ul className="list-disc pl-4 mt-1 space-y-0.5 font-mono text-[11px] text-neutral-700">
+                  <li><code>DRIVE_FOLDER_ID</code> = ID da pasta do Drive (<code>1n2_zU5-2DG7tih314twOcf6lRSXZeFkc</code>)</li>
+                  <li><code>GEMINI_API_KEY</code> = Sua chave de API do Gemini</li>
+                  <li><code>SPREADSHEET_ID</code> = ID da sua planilha Google Sheets</li>
+                </ul>
+              </li>
+              <li>Acesse o menu <strong>Acionadores (Ícone de relógio ⏰) ➔ Adicionar Acionador</strong>:</li>
+              <li>Selecione a função <code className="font-mono text-neutral-900">processarPastaAbastecimentos</code>, evento <strong>Baseado em tempo</strong> (ex: a cada 1 ou 5 minutos).</li>
+            </ol>
+          </div>
+        )}
       </div>
     </div>
   );

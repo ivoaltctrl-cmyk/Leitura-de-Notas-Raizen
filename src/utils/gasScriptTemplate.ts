@@ -1,33 +1,25 @@
 /**
  * Google Apps Script Templates (GAS)
- * Script 1: SCRIPT_CODIGO_UNIFICADO_GS (Recomendado - Tudo em 1 único arquivo Código.gs)
- * Script 2: SCRIPT_WEBHOOK_GS (Compatibilidade)
- * Script 3: SCRIPT_CODIGO_GS (Compatibilidade)
+ * Script 1: SCRIPT_WEBHOOK_GS (webhook.gs - Comunicação com o App e Planilha)
+ * Script 2: SCRIPT_CODIGO_GS (Código.gs - Robô de IA Gemini 2.5 Flash Lite para OCR de Comprovantes)
+ * Script 3: SCRIPT_CODIGO_UNIFICADO_GS (Tudo em 1 único arquivo opcional)
  */
 
-export const SCRIPT_CODIGO_UNIFICADO_GS = `/**
+export const SCRIPT_WEBHOOK_GS = `/**
  * ============================================================================
- * SISTEMA INTEGRADO WFS / RAÍZEN - SCRIPT UNIFICADO (Código.gs)
+ * SISTEMA INTEGRADO WFS / RAÍZEN - WEBHOOK DE COMUNICAÇÃO (webhook.gs)
  * ============================================================================
- * Inclui:
- * 1. Webhook Web App (doGet / doPost) para comunicação com o App React
- * 2. Upload de fotos de abastecimento na pasta do Google Drive
- * 3. Leitura em tempo real dos registros da aba "Dados_Raizen"
- * 4. Edição e Exclusão de linhas com recálculo automático
- * 5. Lançamento e atualização de Valores por Litro e Total (Colunas M e N)
- * 6. Robô Gemini 2.5 Flash Lite para OCR de alta volumetria e precisão
+ * Responsabilidade:
+ * 1. Receber upload de fotos do App React e salvar no Google Drive
+ * 2. Ler registros da aba "Dados_Raizen" em tempo real (GET/POST)
+ * 3. Atualizar/Editar registros e recalcular valores (Colunas M e N)
+ * 4. Excluir registros com segurança
+ * 5. Atualizar preços de combustível em lote
  * ============================================================================
  */
 
 var NOME_ABA = "Dados_Raizen";
 var FOLDER_ID = "1n2_zU5-2DG7tih314twOcf6lRSXZeFkc"; // ID da pasta do Google Drive
-var GEMINI_MODEL_ABASTECIMENTO = "gemini-2.5-flash-lite"; // Alta volumetria e velocidade
-
-var ABASTECIMENTO_CONFIG = {
-  SHEET_NAME: "Dados_Raizen",
-  PASTA_PROCESSADOS: "Processados",
-  MAX_FILE_SIZE_MB: 8
-};
 
 // Token secreto de segurança opcional
 var WEBHOOK_SECRET_TOKEN = "";
@@ -149,24 +141,7 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 6. Executar Robô de IA manualmente (On-Demand) via Webhook
-    if (data.action === 'processar_agora' || data.action === 'processar_fila' || data.action === 'executar_robo') {
-      try {
-        var resRobo = processarPastaAbastecimentos(20);
-        return ContentService.createTextOutput(JSON.stringify({
-          sucesso: true,
-          mensagem: (resRobo && resRobo.mensagem) || "Robô de IA executado com sucesso!",
-          detalhes: resRobo || null
-        })).setMimeType(ContentService.MimeType.JSON);
-      } catch (errRobo) {
-        return ContentService.createTextOutput(JSON.stringify({
-          sucesso: false,
-          mensagem: "Erro ao executar robô: " + errRobo.message
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
-    }
-
-    // 7. Gravação: Salvar Foto no Drive
+    // 6. Gravação: Salvar Foto no Drive
     if (!data.base64) {
       throw new Error("Imagem ausente.");
     }
@@ -229,7 +204,7 @@ function lerRegistrosPlanilha() {
 
   if (!ss) return [];
 
-  var sheet = ss.getSheetByName(NOME_ABA) || ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME);
+  var sheet = ss.getSheetByName(NOME_ABA) || ss.getSheetByName("Dados_Raizen");
   if (!sheet) return [];
 
   var lastRow = sheet.getLastRow();
@@ -272,7 +247,7 @@ function lerRegistrosPlanilha() {
 }
 
 /**
- * Atualiza preços de combustível em lote
+ * Atualiza preços de combustível em lote (Colunas M e N)
  */
 function atualizarPrecosCombustivel(data) {
   try {
@@ -284,7 +259,7 @@ function atualizarPrecosCombustivel(data) {
     }
     if (!ss) return { sucesso: false, mensagem: "Planilha não encontrada." };
 
-    var sheet = ss.getSheetByName(NOME_ABA) || ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME);
+    var sheet = ss.getSheetByName(NOME_ABA);
     if (!sheet) return { sucesso: false, mensagem: "Aba não encontrada." };
 
     var lastRow = sheet.getLastRow();
@@ -330,7 +305,7 @@ function atualizarRegistroLinha(data) {
     }
     if (!ss) return { sucesso: false, mensagem: "Planilha não encontrada." };
 
-    var sheet = ss.getSheetByName(NOME_ABA) || ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME);
+    var sheet = ss.getSheetByName(NOME_ABA);
     if (!sheet) return { sucesso: false, mensagem: "Aba não encontrada." };
 
     var lastRow = sheet.getLastRow();
@@ -419,7 +394,7 @@ function excluirRegistroLinha(data) {
     }
     if (!ss) return { sucesso: false, mensagem: "Planilha não encontrada." };
 
-    var sheet = ss.getSheetByName(NOME_ABA) || ss.getSheetByName(ABASTECIMENTO_CONFIG.SHEET_NAME);
+    var sheet = ss.getSheetByName(NOME_ABA);
     if (!sheet) return { sucesso: false, mensagem: "Aba não encontrada." };
 
     var lastRow = sheet.getLastRow();
@@ -458,12 +433,28 @@ function excluirRegistroLinha(data) {
     return { sucesso: false, mensagem: "Erro ao excluir linha: " + err.message };
   }
 }
+`;
 
-/**
+export const SCRIPT_CODIGO_GS = `/**
  * ============================================================================
- * ROBÔ DE IA GEMINI 2.5 FLASH LITE (PROCESSADOR DE COMPROVANTES)
+ * SISTEMA INTEGRADO WFS / RAÍZEN - ROBÔ DE IA GEMINI (Código.gs)
+ * ============================================================================
+ * Responsabilidade:
+ * 1. Processar pasta do Google Drive com fotos de notas/comprovantes
+ * 2. Realizar OCR e auditoria com modelo Gemini 2.5 Flash Lite
+ * 3. Gravar dados extraídos na aba "Dados_Raizen" da planilha Google Sheets
+ * 4. Mover fotos processadas para a subpasta "Processados"
  * ============================================================================
  */
+
+var ABASTECIMENTO_CONFIG = {
+  SHEET_NAME: "Dados_Raizen",
+  PASTA_PROCESSADOS: "Processados",
+  MAX_FILE_SIZE_MB: 8
+};
+
+var GEMINI_MODEL_ABASTECIMENTO = "gemini-2.5-flash-lite"; // Alta volumetria e velocidade
+
 function processarPastaAbastecimentos(limiteLote) {
   var lock = LockService.getScriptLock();
   var temLock = lock.tryLock(5000);
@@ -482,7 +473,7 @@ function processarPastaAbastecimentos(limiteLote) {
 
     var folderId = scriptProperties.getProperty('DRIVE_FOLDER_ID_ABASTECIMENTO') ||
                    scriptProperties.getProperty('DRIVE_FOLDER_ID') ||
-                   FOLDER_ID;
+                   "1n2_zU5-2DG7tih314twOcf6lRSXZeFkc";
     var apiKey = scriptProperties.getProperty('GEMINI_API_KEY_ABASTECIMENTO') ||
                  scriptProperties.getProperty('GEMINI_API_KEY');
     
@@ -516,7 +507,7 @@ function processarPastaAbastecimentos(limiteLote) {
           file.moveTo(processedFolder);
           countProcessados++;
           
-          Utilities.sleep(3000); // 3s entre chamadas
+          Utilities.sleep(3000); // 3 segundos entre chamadas
         } catch (err) {
           countErros++;
           Logger.log('Erro ao processar ' + file.getName() + ': ' + err.message);
@@ -526,8 +517,8 @@ function processarPastaAbastecimentos(limiteLote) {
 
     var temMaisPendentes = files.hasNext();
     var mensagemRetorno = countProcessados > 0 
-      ? ("Sucesso: " + countProcessados + " nota(s) processada(s) e inserida(s) na planilha!" + (temMaisPendentes ? " (Ainda restam arquivos na fila - clique novamente para o próximo lote)." : ""))
-      : "Nenhuma foto nova pendente para processar na pasta.";
+      ? ("Sucesso: " + countProcessados + " nota(s) processada(s) e inserida(s) na planilha!" + (temMaisPendentes ? " (Ainda restam fotos na pasta)." : ""))
+      : "Nenhuma foto pendente para processar na pasta.";
 
     Logger.log(mensagemRetorno);
     return {
@@ -727,5 +718,4 @@ function processarFila() {
 }
 `;
 
-export const SCRIPT_WEBHOOK_GS = SCRIPT_CODIGO_UNIFICADO_GS;
-export const SCRIPT_CODIGO_GS = SCRIPT_CODIGO_UNIFICADO_GS;
+export const SCRIPT_CODIGO_UNIFICADO_GS = SCRIPT_WEBHOOK_GS + "\n\n" + SCRIPT_CODIGO_GS;
