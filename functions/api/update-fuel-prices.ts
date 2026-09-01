@@ -9,7 +9,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     'Cache-Control': 'no-cache, no-store, must-revalidate',
   };
 
-  const auth = authenticateRequest(context.request, context.env);
+  const auth = await authenticateRequest(context.request, context.env);
   if (!auth.authorized) {
     return auth.errorResponse!;
   }

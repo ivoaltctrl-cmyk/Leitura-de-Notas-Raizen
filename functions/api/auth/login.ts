@@ -1,5 +1,4 @@
-import jwt from 'jsonwebtoken';
-import { verifyPasswordAgainstEnv, getJwtSecret, JWT_EXPIRES_IN, handleOptions } from '../_authHelper';
+import { verifyPasswordAgainstEnv, getJwtSecret, signJwt, handleOptions } from '../_authHelper';
 
 export const onRequestOptions = handleOptions;
 
@@ -21,8 +20,8 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     }
 
     const requestedRole = role === 'admin' ? 'admin' : 'operator';
-    const isAdmin = verifyPasswordAgainstEnv(password, 'admin', context.env);
-    const isOperator = verifyPasswordAgainstEnv(password, 'operator', context.env);
+    const isAdmin = await verifyPasswordAgainstEnv(password, 'admin', context.env);
+    const isOperator = await verifyPasswordAgainstEnv(password, 'operator', context.env);
 
     let secret: string;
     try {
@@ -41,7 +40,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
           { status: 401, headers: responseHeaders }
         );
       }
-      const token = jwt.sign({ role: 'admin' }, secret, { expiresIn: JWT_EXPIRES_IN });
+      const token = await signJwt({ role: 'admin' }, secret);
       return new Response(
         JSON.stringify({
           sucesso: true,
@@ -62,7 +61,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     }
 
     const effectiveRole = isAdmin ? 'admin' : 'operator';
-    const token = jwt.sign({ role: effectiveRole }, secret, { expiresIn: JWT_EXPIRES_IN });
+    const token = await signJwt({ role: effectiveRole }, secret);
     return new Response(
       JSON.stringify({
         sucesso: true,

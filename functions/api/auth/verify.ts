@@ -8,7 +8,7 @@ export const onRequestGet = async (context: { request: Request; env: Record<stri
     'Access-Control-Allow-Origin': '*',
   };
 
-  const auth = authenticateRequest(context.request, context.env);
+  const auth = await authenticateRequest(context.request, context.env);
   if (!auth.authorized) {
     return new Response(
       JSON.stringify({ sucesso: false, valid: false }),

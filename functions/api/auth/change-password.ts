@@ -1,5 +1,4 @@
-import bcrypt from 'bcryptjs';
-import { authenticateRequest, handleOptions } from '../_authHelper';
+import { authenticateRequest, sha256Hex, handleOptions } from '../_authHelper';
 
 export const onRequestOptions = handleOptions;
 
@@ -9,7 +8,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     'Access-Control-Allow-Origin': '*',
   };
 
-  const auth = authenticateRequest(context.request, context.env, 'admin');
+  const auth = await authenticateRequest(context.request, context.env, 'admin');
   if (!auth.authorized) {
     return auth.errorResponse!;
   }
@@ -25,13 +24,13 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
       );
     }
 
-    const hash = bcrypt.hashSync(newPassword.trim(), 10);
+    const hash = await sha256Hex(newPassword.trim());
     const envKey = targetRole === 'admin' ? 'ADMIN_PASSWORD_HASH' : 'OPERATOR_PASSWORD_HASH';
 
     return new Response(
       JSON.stringify({
         sucesso: true,
-        mensagem: `Para persistir no Cloudflare Pages, configure a variável de ambiente ${envKey} com o valor do hash gerado no painel da Cloudflare.`,
+        mensagem: `Para persistir no Cloudflare Pages, configure a variável de ambiente ${envKey} com o hash SHA-256 gerado no painel da Cloudflare.`,
         hashGerado: hash,
       }),
       { status: 200, headers: responseHeaders }

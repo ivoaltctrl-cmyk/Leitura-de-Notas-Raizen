@@ -8,7 +8,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     'Access-Control-Allow-Origin': '*',
   };
 
-  const auth = authenticateRequest(context.request, context.env);
+  const auth = await authenticateRequest(context.request, context.env);
   if (!auth.authorized) {
     return auth.errorResponse!;
   }
