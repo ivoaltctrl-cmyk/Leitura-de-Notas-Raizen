@@ -340,12 +340,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               )}
             </button>
           </form>
-
-          <div className="text-center pt-2 border-t border-neutral-100">
-            <span className="text-[11px] text-neutral-400">
-              Senha padrão inicial: <code className="bg-neutral-100 px-1.5 py-0.5 rounded text-neutral-700 font-mono">Admin1234</code>
-            </span>
-          </div>
         </div>
       </div>
     );
