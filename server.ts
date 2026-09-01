@@ -20,10 +20,6 @@ if (!JWT_SECRET || !JWT_SECRET.trim()) {
 }
 const JWT_EXPIRES_IN = '12h';
 
-// Default Passwords (when not defined via environment variables or disk config)
-const DEFAULT_OP_PASS = '1234';
-const DEFAULT_ADMIN_PASS = 'Admin1234';
-
 // Restricted CORS headers middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
@@ -135,10 +131,6 @@ function verifyPassword(inputPassword: string, role: 'operator' | 'admin'): bool
     if (process.env.ADMIN_PASSWORD) {
       if (trimmed === process.env.ADMIN_PASSWORD) return true;
     }
-    // 3. Fallback default
-    if (!cachedConfig.adminPasswordHash && !process.env.ADMIN_PASSWORD_HASH && !process.env.ADMIN_PASSWORD) {
-      if (trimmed === DEFAULT_ADMIN_PASS || trimmed === 'admin') return true;
-    }
     return false;
   }
 
@@ -156,10 +148,6 @@ function verifyPassword(inputPassword: string, role: 'operator' | 'admin'): bool
     }
     if (process.env.OPERATOR_PASSWORD) {
       if (trimmed === process.env.OPERATOR_PASSWORD) return true;
-    }
-    // 3. Fallback default
-    if (!cachedConfig.operatorPasswordHash && !process.env.OPERATOR_PASSWORD_HASH && !process.env.OPERATOR_PASSWORD) {
-      if (trimmed === DEFAULT_OP_PASS) return true;
     }
     return false;
   }

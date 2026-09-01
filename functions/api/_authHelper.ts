@@ -4,8 +4,6 @@ export interface AuthPayload {
   exp?: number;
 }
 
-const DEFAULT_ADMIN_PASS = 'admin123';
-const DEFAULT_OP_PASS = 'operador123';
 export const JWT_EXPIRES_IN_HOURS = 12;
 
 export function getJwtSecret(env: Record<string, any>): string {
@@ -154,7 +152,6 @@ export async function verifyPasswordAgainstEnv(
   if (role === 'admin') {
     if (adminPlain && trimmed === adminPlain) return true;
     if (adminHash && (trimmed === adminHash || inputHash === String(adminHash).toLowerCase())) return true;
-    if (!adminHash && !adminPlain && (trimmed === DEFAULT_ADMIN_PASS || trimmed === 'admin')) return true;
     return false;
   }
 
@@ -163,7 +160,6 @@ export async function verifyPasswordAgainstEnv(
     if (await verifyPasswordAgainstEnv(trimmed, 'admin', env)) return true;
     if (opPlain && trimmed === opPlain) return true;
     if (opHash && (trimmed === opHash || inputHash === String(opHash).toLowerCase())) return true;
-    if (!opHash && !opPlain && trimmed === DEFAULT_OP_PASS) return true;
     return false;
   }
 
