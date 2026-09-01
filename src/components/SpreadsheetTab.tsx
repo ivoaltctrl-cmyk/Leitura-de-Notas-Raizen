@@ -25,6 +25,9 @@ import {
   Filter,
   Edit3,
   Trash2,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { AbastecimentoRecord, GasConfig } from '../types';
 import { exportToExcelXLSX, exportToCSV, copyTableAsTSV } from '../utils/exportUtils';
@@ -41,7 +44,8 @@ import {
   formatVolumeL, 
   isRecordInDateRange, 
   formatDateToBR, 
-  formatDateToInput 
+  formatDateToInput,
+  parseDateString
 } from '../utils/dateUtils';
 import { FuelPriceModal } from './FuelPriceModal';
 import { EditReceiptModal } from './EditReceiptModal';
@@ -70,6 +74,9 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
   // Date Range Filters (YYYY-MM-DD for date inputs)
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+
+  // Sorting state for Data column (defaults to 'desc' - newest first)
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
 
   // Fuel Price Launch Modal state
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
@@ -156,6 +163,39 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
       );
     });
   }, [records, searchQuery, selectedProduct, selectedPayment, startDate, endDate]);
+
+  // Sorted records (client-side sorting on filteredRecords)
+  // Primary criteria: Col B (Data) - newest to oldest (desc) or oldest to newest (asc)
+  // Secondary criteria (tie-breaker): Col A (Número) - Number comparison (highest first in desc, lowest first in asc)
+  const sortedRecords = useMemo(() => {
+    const list = [...filteredRecords];
+    list.sort((a, b) => {
+      // 1. Primary: Date comparison
+      const rawDateA = a.dataAbastecimento || (a.dataCriacao ? new Date(a.dataCriacao).toLocaleDateString('pt-BR') : '');
+      const rawDateB = b.dataAbastecimento || (b.dataCriacao ? new Date(b.dataCriacao).toLocaleDateString('pt-BR') : '');
+
+      const dateObjA = parseDateString(rawDateA);
+      const dateObjB = parseDateString(rawDateB);
+
+      const timeA = dateObjA ? dateObjA.getTime() : 0;
+      const timeB = dateObjB ? dateObjB.getTime() : 0;
+
+      if (timeA !== timeB) {
+        return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
+      }
+
+      // 2. Secondary (tie-breaker): Número comparison
+      const numA = parseFloat(String(a.numero || '').replace(/\D/g, '')) || 0;
+      const numB = parseFloat(String(b.numero || '').replace(/\D/g, '')) || 0;
+
+      if (numA !== numB) {
+        return sortDirection === 'desc' ? numB - numA : numA - numB;
+      }
+
+      return 0;
+    });
+    return list;
+  }, [filteredRecords, sortDirection]);
 
   // Aggregate metrics
   const totalVolume = useMemo(() => {
@@ -980,11 +1020,24 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
                     Número
                   </th>
 
-                  {/* Col B: Data do Abastecimento */}
-                  <th className="py-2 px-2 border-r border-red-700 whitespace-nowrap bg-red-700">
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-amber-300 shrink-0" />
-                      <span>Data</span>
+                  {/* Col B: Data do Abastecimento (Ordenável) */}
+                  <th 
+                    className="py-2 px-2 border-r border-red-700 whitespace-nowrap bg-red-700 hover:bg-red-800 transition-colors cursor-pointer select-none"
+                    onClick={() => setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc')}
+                    title={`Clique para ordenar por data (${sortDirection === 'desc' ? 'mais recente → mais antiga' : 'mais antiga → mais recente'})`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-amber-300 shrink-0" />
+                        <span>Data</span>
+                      </div>
+                      <div className="flex items-center text-amber-300 bg-red-800/80 px-1 py-0.5 rounded text-[10px] font-mono">
+                        {sortDirection === 'desc' ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-amber-300" />
+                        ) : (
+                          <ChevronUp className="w-3.5 h-3.5 text-amber-300" />
+                        )}
+                      </div>
                     </div>
                   </th>
 
@@ -1063,7 +1116,7 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
 
               {/* Table Rows */}
               <tbody className="divide-y divide-neutral-200 bg-white">
-                {filteredRecords.map((r, index) => {
+                {sortedRecords.map((r, index) => {
                   const volFloat = parseVolumeFloat(r.volume);
                   const precoLitroFloat = r.valorLitro ? parseCurrencyFloat(r.valorLitro) : 0;
                   const totalValFloat = r.valorTotal ? parseCurrencyFloat(r.valorTotal) : 0;
