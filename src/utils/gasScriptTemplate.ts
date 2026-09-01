@@ -19,14 +19,59 @@ export const SCRIPT_WEBHOOK_GS = `/**
  */
 
 var NOME_ABA = "Dados_Raizen";
+var NOME_ABA_AUDITORIA = "Logs_Auditoria";
+var NOME_ABA_LIXEIRA = "Lixeira_Excluidos";
 var FOLDER_ID = "1n2_zU5-2DG7tih314twOcf6lRSXZeFkc"; // ID da pasta do Google Drive
 
-// Token secreto de segurança opcional
+// Token secreto de segurança OBRIGATÓRIO:
+// IMPORTANTE: Configure a chave 'SECRET_TOKEN' nas Propriedades do Script (Configurações do Projeto > Propriedades do Script)
+// ou preencha a variável WEBHOOK_SECRET_TOKEN abaixo. Sem essa chave, todas as requisições serão rejeitadas (Fail-Closed).
 var WEBHOOK_SECRET_TOKEN = "";
+
+function registrarLogAuditoria(ss, acao, numero, linha, dadosAntes, dadosDepois, status) {
+  try {
+    if (!ss) return;
+    var logSheet = ss.getSheetByName(NOME_ABA_AUDITORIA);
+    if (!logSheet) {
+      logSheet = ss.insertSheet(NOME_ABA_AUDITORIA);
+      logSheet.appendRow(["Data/Hora (ISO)", "Ação", "Número Nota", "Linha Afetada", "Dados Anteriores", "Novos Dados", "Status"]);
+      logSheet.getRange(1, 1, 1, 7).setFontWeight("bold").setBackground("#f3f4f6");
+    }
+    logSheet.appendRow([
+      new Date().toISOString(),
+      acao || "",
+      String(numero || ""),
+      linha || "",
+      typeof dadosAntes === 'object' ? JSON.stringify(dadosAntes) : String(dadosAntes || ""),
+      typeof dadosDepois === 'object' ? JSON.stringify(dadosDepois) : String(dadosDepois || ""),
+      status || "SUCESSO"
+    ]);
+  } catch (logErr) {
+    Logger.log("Erro ao gravar log de auditoria: " + logErr.message);
+  }
+}
+
+function salvarNaLixeira(ss, rowValues, numero, rowIdx) {
+  try {
+    if (!ss) return;
+    var trashSheet = ss.getSheetByName(NOME_ABA_LIXEIRA);
+    if (!trashSheet) {
+      trashSheet = ss.insertSheet(NOME_ABA_LIXEIRA);
+      var headerCols = ["Data Exclusão (ISO)", "Número", "Data Abastecimento", "Forma Pagamento", "Cliente", "Hora Chegada", "Início", "Término", "Produto", "Volume", "Obs", "Assinatura", "Link Drive", "Valor/L", "Total"];
+      trashSheet.appendRow(headerCols);
+      trashSheet.getRange(1, 1, 1, headerCols.length).setFontWeight("bold").setBackground("#fee2e2");
+    }
+    var trashRow = [new Date().toISOString()].concat(rowValues);
+    trashSheet.appendRow(trashRow);
+  } catch (trashErr) {
+    Logger.log("Erro ao salvar na lixeira de segurança: " + trashErr.message);
+  }
+}
 
 function validarAcessoToken(e, postData) {
   var expectedToken = WEBHOOK_SECRET_TOKEN || PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN') || "";
-  if (!expectedToken || !expectedToken.trim()) return true;
+  // Fail-Closed: se o token não estiver configurado nas Propriedades do Script ou no código, bloqueia o acesso
+  if (!expectedToken || !expectedToken.trim()) return false;
   
   expectedToken = String(expectedToken).trim();
   var receivedToken = "";
@@ -331,6 +376,9 @@ function atualizarRegistroLinha(data) {
       return { sucesso: false, mensagem: "Lançamento com Número '" + targetNumero + "' não encontrado para edição." };
     }
 
+    // Capturar dados anteriores para auditoria
+    var oldValues = sheet.getRange(rowIdx, 1, 1, 14).getDisplayValues()[0];
+
     if (data.numero !== undefined) sheet.getRange(rowIdx, 1).setValue(String(data.numero));
     if (data.dataAbastecimento !== undefined) sheet.getRange(rowIdx, 2).setValue(String(data.dataAbastecimento));
     if (data.formaPagamento !== undefined) sheet.getRange(rowIdx, 3).setValue(String(data.formaPagamento));
@@ -355,9 +403,9 @@ function atualizarRegistroLinha(data) {
     if (data.driveFileUrl !== undefined && data.driveFileUrl) sheet.getRange(rowIdx, 12).setValue(String(data.driveFileUrl));
 
     if (data.valorLitro !== undefined || data.valorTotal !== undefined) {
-      var vLitroStr = String(data.valorLitro || "").replace(/[^\\d,\\.-]/g, '').replace(/\\./g, '').replace(',', '.');
+      var vLitroStr = String(data.valorLitro || "").replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.');
       var vLitroNum = parseFloat(vLitroStr);
-      var volCurrentStr = String(data.volume !== undefined ? data.volume : sheet.getRange(rowIdx, 9).getValue()).replace(/[^\\d,\\.-]/g, '').replace(/\\./g, '').replace(',', '.');
+      var volCurrentStr = String(data.volume !== undefined ? data.volume : sheet.getRange(rowIdx, 9).getValue()).replace(/[^\d,\.-]/g, '').replace(/\./g, '').replace(',', '.');
       var volCurrentNum = parseFloat(volCurrentStr);
 
       if (!isNaN(vLitroNum) && vLitroNum > 0) {
@@ -371,6 +419,10 @@ function atualizarRegistroLinha(data) {
       }
     }
 
+    // Registrar no Log de Auditoria
+    var newValues = sheet.getRange(rowIdx, 1, 1, 14).getDisplayValues()[0];
+    registrarLogAuditoria(ss, "EDIÇÃO", data.numero || targetNumero, rowIdx, oldValues, newValues, "SUCESSO");
+
     return {
       sucesso: true,
       mensagem: "Lançamento Nº " + (data.numero || targetNumero) + " atualizado na planilha!",
@@ -382,7 +434,7 @@ function atualizarRegistroLinha(data) {
 }
 
 /**
- * Exclui uma linha da planilha
+ * Exclui uma linha da planilha (com backup na lixeira e log de auditoria)
  */
 function excluirRegistroLinha(data) {
   try {
@@ -422,11 +474,21 @@ function excluirRegistroLinha(data) {
       return { sucesso: false, mensagem: "Lançamento com Número '" + targetNumero + "' não encontrado." };
     }
 
+    // 1. Capturar os dados completos antes de excluir
+    var deletedValues = sheet.getRange(rowIdx, 1, 1, 14).getDisplayValues()[0];
+
+    // 2. Salvar backup seguro na aba "Lixeira_Excluidos" (Soft Delete)
+    salvarNaLixeira(ss, deletedValues, targetNumero, rowIdx);
+
+    // 3. Registrar Log de Auditoria
+    registrarLogAuditoria(ss, "EXCLUSÃO", targetNumero, rowIdx, deletedValues, "MOVIDO PARA LIXEIRA", "SUCESSO");
+
+    // 4. Deletar a linha da aba principal
     sheet.deleteRow(rowIdx);
 
     return {
       sucesso: true,
-      mensagem: "Lançamento Nº " + targetNumero + " excluído com sucesso!",
+      mensagem: "Lançamento Nº " + targetNumero + " excluído com sucesso (backup salvo na lixeira)!",
       row: rowIdx
     };
   } catch (err) {

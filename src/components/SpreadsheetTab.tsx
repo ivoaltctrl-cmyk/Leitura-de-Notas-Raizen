@@ -168,25 +168,59 @@ export const SpreadsheetTab: React.FC<SpreadsheetTabProps> = ({
   // Primary criteria: Col B (Data) - newest to oldest (desc) or oldest to newest (asc)
   // Secondary criteria (tie-breaker): Col A (Número) - Number comparison (highest first in desc, lowest first in asc)
   const sortedRecords = useMemo(() => {
+    // Helper function that strictly guarantees a finite number timestamp without ever returning NaN
+    const extractTimestamp = (val: string | null | undefined): number => {
+      if (val === null || val === undefined) return 0;
+      const s = String(val).replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+      if (!s || s === '-') return 0;
+
+      // 1. Brazilian format: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY (handles variations and optional trailing times)
+      const brMatch = s.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})/);
+      if (brMatch) {
+        const day = parseInt(brMatch[1], 10);
+        const month = parseInt(brMatch[2], 10) - 1;
+        let year = parseInt(brMatch[3], 10);
+        if (year < 100) year += 2000;
+        const d = new Date(year, month, day, 12, 0, 0, 0);
+        const t = d.getTime();
+        if (typeof t === 'number' && !isNaN(t)) return t;
+      }
+
+      // 2. ISO format: YYYY-MM-DD or YYYY/MM/DD
+      const isoMatch = s.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+      if (isoMatch) {
+        const year = parseInt(isoMatch[1], 10);
+        const month = parseInt(isoMatch[2], 10) - 1;
+        const day = parseInt(isoMatch[3], 10);
+        const d = new Date(year, month, day, 12, 0, 0, 0);
+        const t = d.getTime();
+        if (typeof t === 'number' && !isNaN(t)) return t;
+      }
+
+      // 3. Fallback date parse
+      const fallback = new Date(s);
+      const t = fallback.getTime();
+      if (typeof t === 'number' && !isNaN(t)) return t;
+
+      return 0; // Deterministic minimum timestamp for unparseable entries
+    };
+
     const list = [...filteredRecords];
     list.sort((a, b) => {
       // 1. Primary: Date comparison
       const rawDateA = a.dataAbastecimento || (a.dataCriacao ? new Date(a.dataCriacao).toLocaleDateString('pt-BR') : '');
       const rawDateB = b.dataAbastecimento || (b.dataCriacao ? new Date(b.dataCriacao).toLocaleDateString('pt-BR') : '');
 
-      const dateObjA = parseDateString(rawDateA);
-      const dateObjB = parseDateString(rawDateB);
-
-      const timeA = dateObjA ? dateObjA.getTime() : 0;
-      const timeB = dateObjB ? dateObjB.getTime() : 0;
+      const timeA = extractTimestamp(rawDateA);
+      const timeB = extractTimestamp(rawDateB);
 
       if (timeA !== timeB) {
         return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
       }
 
       // 2. Secondary (tie-breaker): Número comparison
-      const numA = parseFloat(String(a.numero || '').replace(/\D/g, '')) || 0;
-      const numB = parseFloat(String(b.numero || '').replace(/\D/g, '')) || 0;
+      const numA = Number(String(a.numero || '').replace(/\D/g, '')) || 0;
+      const numB = Number(String(b.numero || '').replace(/\D/g, '')) || 0;
 
       if (numA !== numB) {
         return sortDirection === 'desc' ? numB - numA : numA - numB;

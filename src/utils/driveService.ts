@@ -1,5 +1,6 @@
 import { AbastecimentoRecord } from '../types';
 import { parseVolumeFloat, parseCurrencyFloat, formatCurrencyBRL } from './dateUtils';
+import { getAuthHeaders } from './authService';
 
 export interface ProcessReceiptFlowResult {
   sucesso: boolean;
@@ -59,7 +60,10 @@ export async function saveGlobalConfig(config: { webhookUrl: string; autoUploadT
   try {
     const res = await fetch('/api/config', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify(config),
     });
     if (res.ok) {
@@ -160,7 +164,10 @@ export async function uploadImageToGoogleDrive(
 
     const proxyRes = await fetch('/api/upload-drive-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({
         webhookUrl: targetUrl,
         payload: payload,
@@ -554,7 +561,10 @@ export async function triggerGasProcessing(
   try {
     const res = await fetch('/api/trigger-gas-processing', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({
         webhookUrl: targetUrl,
         secretToken: secretToken?.trim(),
@@ -728,7 +738,10 @@ export async function updateFuelPricesInSheet(
   try {
     const res = await fetch('/api/update-fuel-prices', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({
         webhookUrl: targetUrl,
         secretToken: secretToken?.trim(),
@@ -840,7 +853,10 @@ export async function updateReceiptRecordInSheet(
   try {
     const res = await fetch('/api/update-sheet-record', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({
         webhookUrl: targetUrl,
         secretToken: secretToken?.trim(),
@@ -935,7 +951,10 @@ export async function deleteReceiptRecordFromSheet(
   try {
     const res = await fetch('/api/delete-sheet-record', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({
         webhookUrl: targetUrl,
         secretToken: secretToken?.trim(),

@@ -1,7 +1,9 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 
@@ -10,12 +12,56 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Global CORS headers middleware
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+// Security & Authentication Constants
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || !JWT_SECRET.trim()) {
+  console.error('ERRO FATAL: JWT_SECRET não configurado');
+  throw new Error('JWT_SECRET não configurado');
+}
+const JWT_EXPIRES_IN = '12h';
+
+// Default Passwords (when not defined via environment variables or disk config)
+const DEFAULT_OP_PASS = '1234';
+const DEFAULT_ADMIN_PASS = 'Admin1234';
+
+// Restricted CORS headers middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+  const appUrl = process.env.APP_URL;
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : [];
+
+  let isAllowed = false;
+  if (!origin) {
+    // Same-origin / non-browser requests
+    isAllowed = true;
+  } else if (
+    origin === appUrl ||
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:') ||
+    allowedOrigins.includes(origin)
+  ) {
+    isAllowed = true;
+  } else if (process.env.ALLOW_SANDBOX_PREVIEW === 'true' && origin.includes('.run.app')) {
+    // Isolated sandbox preview exception only when explicitly enabled via environment variable
+    isAllowed = true;
+  } else {
+    isAllowed = false;
+  }
+
+  if (origin && isAllowed) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
   if (req.method === 'OPTIONS') {
+    if (origin && !isAllowed) {
+      return res.status(403).json({ error: 'CORS policy: Origem não autorizada.' });
+    }
     return res.sendStatus(200);
   }
   next();
@@ -25,7 +71,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '60mb' }));
 app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 
-// Persistent configuration storage (so all PCs, mobile devices, and incognito sessions share the same webhook URL and token)
+// Persistent configuration storage (shared across all devices & sessions)
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'app_config.json');
 
 interface AppConfig {
@@ -33,17 +79,16 @@ interface AppConfig {
   autoUploadToDrive: boolean;
   sheetUrl?: string;
   secretToken?: string;
+  operatorPasswordHash?: string;
+  adminPasswordHash?: string;
   updatedAt?: string;
 }
 
 let cachedConfig: AppConfig = {
-  webhookUrl:
-    process.env.GOOGLE_APPS_SCRIPT_URL ||
-    process.env.VITE_GOOGLE_APPS_SCRIPT_URL ||
-    'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec',
+  webhookUrl: process.env.GOOGLE_APPS_SCRIPT_URL || '',
   autoUploadToDrive: true,
   sheetUrl: '',
-  secretToken: process.env.GOOGLE_APPS_SCRIPT_TOKEN || process.env.VITE_GOOGLE_APPS_SCRIPT_TOKEN || '',
+  secretToken: process.env.GOOGLE_APPS_SCRIPT_TOKEN || '',
 };
 
 // Load saved config on startup
@@ -72,6 +117,99 @@ function saveConfigToDisk(config: AppConfig) {
   }
 }
 
+// Password verification function using bcrypt & server configuration
+function verifyPassword(inputPassword: string, role: 'operator' | 'admin'): boolean {
+  if (!inputPassword || typeof inputPassword !== 'string') return false;
+  const trimmed = inputPassword.trim();
+  if (!trimmed) return false;
+
+  if (role === 'admin') {
+    // 1. Check custom saved hash in disk config
+    if (cachedConfig.adminPasswordHash) {
+      if (bcrypt.compareSync(trimmed, cachedConfig.adminPasswordHash)) return true;
+    }
+    // 2. Check environment variables
+    if (process.env.ADMIN_PASSWORD_HASH) {
+      if (bcrypt.compareSync(trimmed, process.env.ADMIN_PASSWORD_HASH)) return true;
+    }
+    if (process.env.ADMIN_PASSWORD) {
+      if (trimmed === process.env.ADMIN_PASSWORD) return true;
+    }
+    // 3. Fallback default
+    if (!cachedConfig.adminPasswordHash && !process.env.ADMIN_PASSWORD_HASH && !process.env.ADMIN_PASSWORD) {
+      if (trimmed === DEFAULT_ADMIN_PASS || trimmed === 'admin') return true;
+    }
+    return false;
+  }
+
+  // Operator check (also accepts admin credentials)
+  if (role === 'operator') {
+    if (verifyPassword(trimmed, 'admin')) return true;
+
+    // 1. Check custom saved hash in disk config
+    if (cachedConfig.operatorPasswordHash) {
+      if (bcrypt.compareSync(trimmed, cachedConfig.operatorPasswordHash)) return true;
+    }
+    // 2. Check environment variables
+    if (process.env.OPERATOR_PASSWORD_HASH) {
+      if (bcrypt.compareSync(trimmed, process.env.OPERATOR_PASSWORD_HASH)) return true;
+    }
+    if (process.env.OPERATOR_PASSWORD) {
+      if (trimmed === process.env.OPERATOR_PASSWORD) return true;
+    }
+    // 3. Fallback default
+    if (!cachedConfig.operatorPasswordHash && !process.env.OPERATOR_PASSWORD_HASH && !process.env.OPERATOR_PASSWORD) {
+      if (trimmed === DEFAULT_OP_PASS) return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+// Auth Middleware & Types
+interface AuthPayload {
+  role: 'operator' | 'admin';
+  iat?: number;
+  exp?: number;
+}
+
+export function authMiddleware(req: Request & { user?: AuthPayload }, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      sucesso: false,
+      mensagem: 'Acesso não autorizado: Token de autenticação ausente ou inválido.',
+      necessitaLogin: true,
+    });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as AuthPayload;
+    req.user = decoded;
+    next();
+  } catch (err: any) {
+    return res.status(401).json({
+      sucesso: false,
+      mensagem: 'Sessão expirada ou token de acesso inválido. Por favor, autentique-se novamente.',
+      necessitaLogin: true,
+    });
+  }
+}
+
+export function requireAdminMiddleware(req: Request & { user?: AuthPayload }, res: Response, next: NextFunction) {
+  authMiddleware(req, res, () => {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        sucesso: false,
+        mensagem: 'Acesso restrito: Requer privilégios de Administrador.',
+      });
+    }
+    next();
+  });
+}
+
 // Lazy initialize Gemini client
 function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -93,7 +231,82 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Config Endpoints (Shared across all devices, browsers and incognito sessions)
+// Authentication Endpoints
+app.post('/api/auth/login', (req, res) => {
+  const { password, role } = req.body || {};
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ sucesso: false, mensagem: 'Senha é obrigatória.' });
+  }
+
+  const requestedRole = role === 'admin' ? 'admin' : 'operator';
+  const isAdmin = verifyPassword(password, 'admin');
+  const isOperator = verifyPassword(password, 'operator');
+
+  if (requestedRole === 'admin') {
+    if (!isAdmin) {
+      return res.status(401).json({ sucesso: false, mensagem: 'Senha de administrador incorreta.' });
+    }
+    const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    return res.json({
+      sucesso: true,
+      token,
+      role: 'admin',
+      mensagem: 'Autenticado como Administrador com sucesso.',
+    });
+  }
+
+  // Operator login
+  if (!isOperator && !isAdmin) {
+    return res.status(401).json({ sucesso: false, mensagem: 'Senha de operador incorreta.' });
+  }
+
+  const effectiveRole = isAdmin ? 'admin' : 'operator';
+  const token = jwt.sign({ role: effectiveRole }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return res.json({
+    sucesso: true,
+    token,
+    role: effectiveRole,
+    mensagem: 'Autenticado com sucesso na Operação.',
+  });
+});
+
+app.get('/api/auth/verify', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.json({ sucesso: false, valid: false });
+  }
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as AuthPayload;
+    return res.json({ sucesso: true, valid: true, role: decoded.role });
+  } catch {
+    return res.json({ sucesso: false, valid: false });
+  }
+});
+
+app.post('/api/auth/change-password', requireAdminMiddleware, (req, res) => {
+  try {
+    const { targetRole, newPassword } = req.body || {};
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 2) {
+      return res.status(400).json({ sucesso: false, mensagem: 'A nova senha deve ter pelo menos 2 caracteres.' });
+    }
+    const hash = bcrypt.hashSync(newPassword.trim(), 10);
+    if (targetRole === 'admin') {
+      cachedConfig.adminPasswordHash = hash;
+    } else {
+      cachedConfig.operatorPasswordHash = hash;
+    }
+    saveConfigToDisk(cachedConfig);
+    return res.json({
+      sucesso: true,
+      mensagem: `Senha de ${targetRole === 'admin' ? 'Administrador' : 'Operador'} atualizada com sucesso no servidor!`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ sucesso: false, mensagem: `Erro ao alterar senha: ${err.message}` });
+  }
+});
+
+// Config Endpoints (Safe exposure: never exposes secretToken in plain text)
 app.get('/api/config', (req, res) => {
   res.json({
     sucesso: true,
@@ -101,16 +314,17 @@ app.get('/api/config', (req, res) => {
       webhookUrl: cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL || '',
       autoUploadToDrive: cachedConfig.autoUploadToDrive ?? true,
       sheetUrl: cachedConfig.sheetUrl || '',
-      secretToken: cachedConfig.secretToken || '',
+      hasSecretToken: Boolean(cachedConfig.secretToken || process.env.GOOGLE_APPS_SCRIPT_TOKEN || process.env.VITE_GOOGLE_APPS_SCRIPT_TOKEN),
       updatedAt: cachedConfig.updatedAt || new Date().toISOString(),
     },
   });
 });
 
-app.post('/api/config', (req, res) => {
+app.post('/api/config', requireAdminMiddleware, (req, res) => {
   try {
     const { webhookUrl, autoUploadToDrive, sheetUrl, secretToken } = req.body || {};
     cachedConfig = {
+      ...cachedConfig,
       webhookUrl: typeof webhookUrl === 'string' ? webhookUrl.trim() : cachedConfig.webhookUrl,
       autoUploadToDrive: typeof autoUploadToDrive === 'boolean' ? autoUploadToDrive : cachedConfig.autoUploadToDrive,
       sheetUrl: typeof sheetUrl === 'string' ? sheetUrl.trim() : cachedConfig.sheetUrl,
@@ -121,7 +335,13 @@ app.post('/api/config', (req, res) => {
     res.json({
       sucesso: true,
       mensagem: 'Configuração salva no servidor com sucesso para todos os usuários e dispositivos!',
-      config: cachedConfig,
+      config: {
+        webhookUrl: cachedConfig.webhookUrl,
+        autoUploadToDrive: cachedConfig.autoUploadToDrive,
+        sheetUrl: cachedConfig.sheetUrl,
+        hasSecretToken: Boolean(cachedConfig.secretToken),
+        updatedAt: cachedConfig.updatedAt,
+      },
     });
   } catch (e: any) {
     res.status(500).json({
@@ -1053,7 +1273,7 @@ app.post('/api/test-google-integration', async (req, res) => {
 });
 
 // Endpoint to trigger Google Apps Script AI Robot on-demand
-app.post('/api/trigger-gas-processing', async (req, res) => {
+app.post('/api/trigger-gas-processing', authMiddleware, async (req, res) => {
   try {
     const { webhookUrl, secretToken } = req.body || {};
     const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
@@ -1120,7 +1340,7 @@ app.post('/api/trigger-gas-processing', async (req, res) => {
 });
 
 // Endpoint to update fuel price per liter and recalculate total value across date range and product
-app.post('/api/update-fuel-prices', async (req, res) => {
+app.post('/api/update-fuel-prices', authMiddleware, async (req, res) => {
   try {
     const { webhookUrl, secretToken, dataInicio, dataFim, produto, valorLitro } = req.body || {};
     const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
@@ -1202,7 +1422,7 @@ app.post('/api/update-fuel-prices', async (req, res) => {
 });
 
 // Endpoint to update a specific record row in Google Sheets
-app.post('/api/update-sheet-record', async (req, res) => {
+app.post('/api/update-sheet-record', authMiddleware, async (req, res) => {
   try {
     const { webhookUrl, secretToken, record, oldNumero } = req.body || {};
     const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
@@ -1276,7 +1496,7 @@ app.post('/api/update-sheet-record', async (req, res) => {
 });
 
 // Endpoint to delete a specific record row from Google Sheets
-app.post('/api/delete-sheet-record', async (req, res) => {
+app.post('/api/delete-sheet-record', authMiddleware, async (req, res) => {
   try {
     const { webhookUrl, secretToken, numero, rowNumber } = req.body || {};
     const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;
@@ -1350,7 +1570,7 @@ app.post('/api/delete-sheet-record', async (req, res) => {
 });
 
 // Endpoint proxy for Direct Google Apps Script upload (Direct front -> Drive)
-app.post('/api/upload-drive-proxy', async (req, res) => {
+app.post('/api/upload-drive-proxy', authMiddleware, async (req, res) => {
   try {
     const { webhookUrl, payload, secretToken } = req.body || {};
     const targetUrl = webhookUrl?.trim() || cachedConfig.webhookUrl || process.env.GOOGLE_APPS_SCRIPT_URL || process.env.VITE_GOOGLE_APPS_SCRIPT_URL;

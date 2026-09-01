@@ -14,20 +14,23 @@ import {
   Code,
   FileSpreadsheet,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 import { GasConfig } from '../types';
-import { testGoogleIntegration, fetchRecordsFromSheet } from '../utils/driveService';
+import { testGoogleIntegration, fetchRecordsFromSheet, saveGlobalConfig } from '../utils/driveService';
 import { SCRIPT_WEBHOOK_GS, SCRIPT_CODIGO_GS } from '../utils/gasScriptTemplate';
+import {
+  loginWithPassword,
+  logout,
+  getUserRole,
+  getAuthToken,
+  changeServerPassword,
+} from '../utils/authService';
 
 interface SettingsTabProps {
   gasConfig: GasConfig;
   onSaveConfig: (config: GasConfig) => void;
 }
-
-const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
-const STORAGE_KEY_OPERATOR_PASS = 'abastecimento_operator_password';
-const DEFAULT_PASSWORD = 'Admin1234';
-const DEFAULT_OPERATOR_PASSWORD = '1234';
 
 // URL PADRÃO OFICIAL - Webhook padrão de produção do Google Apps Script
 export const DEFAULT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec';
@@ -37,11 +40,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onSaveConfig,
 }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('admin_session_auth') === 'true';
+    return !!getAuthToken() && getUserRole() === 'admin';
   });
 
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Settings form state com fallback para DEFAULT_WEBHOOK_URL
   const [webhookUrl, setWebhookUrl] = useState(
@@ -67,6 +71,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [newOperatorPassword, setNewOperatorPassword] = useState('');
   const [passwordChangeMsg, setPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [opPasswordChangeMsg, setOpPasswordChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSavingAdminPass, setIsSavingAdminPass] = useState(false);
+  const [isSavingOpPass, setIsSavingOpPass] = useState(false);
 
   // Cache clear state
   const [cacheClearedMsg, setCacheClearedMsg] = useState<string | null>(null);
@@ -76,24 +82,35 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setSecretToken(gasConfig.secretToken || localStorage.getItem('sheets_secret_token') || '');
   }, [gasConfig]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
 
-    const savedPass = localStorage.getItem(STORAGE_KEY_ADMIN_PASS) || DEFAULT_PASSWORD;
+    const trimmed = passwordInput.trim();
+    if (!trimmed) {
+      setAuthError('Por favor, informe a senha de administrador.');
+      return;
+    }
 
-    if (passwordInput.trim() === savedPass || passwordInput.trim() === 'admin' || passwordInput.trim() === 'Admin1234') {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('admin_session_auth', 'true');
-      setPasswordInput('');
-    } else {
-      setAuthError('Senha de administrador incorreta.');
+    setIsLoggingIn(true);
+    try {
+      const res = await loginWithPassword(trimmed, 'admin');
+      if (res.sucesso && res.role === 'admin') {
+        setIsAuthenticated(true);
+        setPasswordInput('');
+      } else {
+        setAuthError(res.mensagem || 'Senha de administrador incorreta.');
+      }
+    } catch (err: any) {
+      setAuthError(`Erro na autenticação: ${err.message || 'Falha de comunicação'}`);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    sessionStorage.removeItem('admin_session_auth');
+    logout();
     setPasswordInput('');
   };
 
@@ -172,11 +189,18 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
   };
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     const finalUrl = webhookUrl.trim();
     const finalToken = secretToken.trim();
     localStorage.setItem('sheets_webhook_url', finalUrl);
     localStorage.setItem('sheets_secret_token', finalToken);
+
+    // Save to server backend
+    await saveGlobalConfig({
+      webhookUrl: finalUrl,
+      secretToken: finalToken,
+    });
+
     onSaveConfig({
       ...gasConfig,
       webhookUrl: finalUrl,
@@ -197,12 +221,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordChangeMsg(null);
 
-    if (!newPassword || newPassword.length < 3) {
-      setPasswordChangeMsg({ type: 'error', text: 'A senha deve ter pelo menos 3 caracteres.' });
+    if (!newPassword || newPassword.length < 4) {
+      setPasswordChangeMsg({ type: 'error', text: 'A senha deve ter pelo menos 4 caracteres.' });
       return;
     }
 
@@ -211,30 +235,52 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       return;
     }
 
-    localStorage.setItem(STORAGE_KEY_ADMIN_PASS, newPassword);
-    setPasswordChangeMsg({ type: 'success', text: 'Senha de administrador alterada com sucesso!' });
-    setNewPassword('');
-    setConfirmPassword('');
-    setTimeout(() => {
-      setPasswordChangeMsg(null);
-    }, 3000);
+    setIsSavingAdminPass(true);
+    try {
+      const res = await changeServerPassword('admin', newPassword);
+      if (res.sucesso) {
+        setPasswordChangeMsg({ type: 'success', text: 'Senha de administrador alterada e protegida no servidor com sucesso!' });
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setPasswordChangeMsg({ type: 'error', text: res.mensagem });
+      }
+    } catch (err: any) {
+      setPasswordChangeMsg({ type: 'error', text: `Erro: ${err.message}` });
+    } finally {
+      setIsSavingAdminPass(false);
+      setTimeout(() => {
+        setPasswordChangeMsg(null);
+      }, 4000);
+    }
   };
 
-  const handleUpdateOperatorPassword = (e: React.FormEvent) => {
+  const handleUpdateOperatorPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setOpPasswordChangeMsg(null);
 
-    if (!newOperatorPassword || newOperatorPassword.trim().length < 2) {
-      setOpPasswordChangeMsg({ type: 'error', text: 'A senha de operador deve ter pelo menos 2 caracteres.' });
+    if (!newOperatorPassword || newOperatorPassword.trim().length < 3) {
+      setOpPasswordChangeMsg({ type: 'error', text: 'A senha de operador deve ter pelo menos 3 caracteres.' });
       return;
     }
 
-    localStorage.setItem(STORAGE_KEY_OPERATOR_PASS, newOperatorPassword.trim());
-    setOpPasswordChangeMsg({ type: 'success', text: 'Senha de operador (Captura de Notas) atualizada com sucesso!' });
-    setNewOperatorPassword('');
-    setTimeout(() => {
-      setOpPasswordChangeMsg(null);
-    }, 3000);
+    setIsSavingOpPass(true);
+    try {
+      const res = await changeServerPassword('operator', newOperatorPassword.trim());
+      if (res.sucesso) {
+        setOpPasswordChangeMsg({ type: 'success', text: 'Senha de operador atualizada e protegida no servidor com sucesso!' });
+        setNewOperatorPassword('');
+      } else {
+        setOpPasswordChangeMsg({ type: 'error', text: res.mensagem });
+      }
+    } catch (err: any) {
+      setOpPasswordChangeMsg({ type: 'error', text: `Erro: ${err.message}` });
+    } finally {
+      setIsSavingOpPass(false);
+      setTimeout(() => {
+        setOpPasswordChangeMsg(null);
+      }, 4000);
+    }
   };
 
   // 1. Password Protection Gate
@@ -258,11 +304,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <div className="relative">
                 <input
                   type="password"
+                  disabled={isLoggingIn}
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
                   placeholder="Digite a senha..."
                   autoFocus
-                  className="w-full px-4 py-3 rounded-xl border border-neutral-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 text-sm outline-hidden transition-all"
+                  className="w-full px-4 py-3 rounded-xl border border-neutral-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 text-sm outline-hidden transition-all disabled:opacity-50"
                 />
                 <Key className="w-4 h-4 text-neutral-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
               </div>
@@ -277,10 +324,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-red-600/20 transition-all cursor-pointer"
+              disabled={isLoggingIn}
+              className="w-full py-3.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-red-600/20 transition-all cursor-pointer disabled:opacity-50"
             >
-              <Unlock className="w-4 h-4" />
-              <span>Desbloquear Configurações</span>
+              {isLoggingIn ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Autenticando...</span>
+                </>
+              ) : (
+                <>
+                  <Unlock className="w-4 h-4" />
+                  <span>Desbloquear Configurações</span>
+                </>
+              )}
             </button>
           </form>
 

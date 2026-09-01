@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, Key, AlertCircle, X, Eye, EyeOff } from 'lucide-react';
+import { Lock, Key, AlertCircle, X, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { loginWithPassword } from '../utils/authService';
 
 interface OperatorAuthModalProps {
   isOpen: boolean;
@@ -8,9 +9,6 @@ interface OperatorAuthModalProps {
   title?: string;
   subtitle?: string;
 }
-
-const STORAGE_KEY_ADMIN_PASS = 'abastecimento_admin_password_v1';
-const STORAGE_KEY_OPERATOR_PASS = 'abastecimento_operator_password';
 
 export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
   isOpen,
@@ -22,10 +20,11 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -35,32 +34,20 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
       return;
     }
 
-    const savedAdminPass = localStorage.getItem(STORAGE_KEY_ADMIN_PASS) || 'Admin1234';
-    const savedOpPass = localStorage.getItem(STORAGE_KEY_OPERATOR_PASS) || '1234';
-
-    // Accepted passwords: saved operator pass, saved admin pass, or standard defaults
-    const validPasswords = [
-      savedOpPass.toLowerCase(),
-      savedAdminPass.toLowerCase(),
-      '1234',
-      'wfs123',
-      'admin1234',
-      'raizen123',
-    ];
-
-    if (
-      trimmed === savedOpPass ||
-      trimmed === savedAdminPass ||
-      validPasswords.includes(trimmed.toLowerCase())
-    ) {
-      try {
-        sessionStorage.setItem('operator_session_auth', 'true');
-      } catch {}
-      setPassword('');
-      setErrorMsg(null);
-      onSuccess();
-    } else {
-      setErrorMsg('Senha incorreta. Tente novamente.');
+    setIsLoading(true);
+    try {
+      const result = await loginWithPassword(trimmed, 'operator');
+      if (result.sucesso) {
+        setPassword('');
+        setErrorMsg(null);
+        onSuccess();
+      } else {
+        setErrorMsg(result.mensagem || 'Senha incorreta. Tente novamente.');
+      }
+    } catch (err: any) {
+      setErrorMsg(`Erro de autenticação: ${err.message || 'Falha de comunicação'}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -70,6 +57,7 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
         {/* Close Button */}
         <button
           type="button"
+          disabled={isLoading}
           onClick={() => {
             setPassword('');
             setErrorMsg(null);
@@ -107,16 +95,18 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
                 id="operator-password-input"
                 type={showPassword ? 'text' : 'password'}
                 autoFocus
+                disabled={isLoading}
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   if (errorMsg) setErrorMsg(null);
                 }}
                 placeholder="Digite a senha..."
-                className="w-full pl-9 pr-10 py-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-sm font-medium text-neutral-900 focus:bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
+                className="w-full pl-9 pr-10 py-2.5 bg-neutral-50 border border-neutral-300 rounded-xl text-sm font-medium text-neutral-900 focus:bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all disabled:opacity-50"
               />
               <button
                 type="button"
+                tabIndex={-1}
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute inset-y-0 right-0 pr-3 flex items-center text-neutral-400 hover:text-neutral-600 cursor-pointer"
               >
@@ -135,22 +125,33 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
+              disabled={isLoading}
               onClick={() => {
                 setPassword('');
                 setErrorMsg(null);
                 onClose();
               }}
-              className="w-1/2 py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              className="w-1/2 py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
+              disabled={isLoading}
               id="btn-confirm-operator-auth"
-              className="w-1/2 py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+              className="w-1/2 py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Liberar Acesso</span>
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Validando...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Liberar Acesso</span>
+                </>
+              )}
             </button>
           </div>
         </form>
@@ -158,3 +159,4 @@ export const OperatorAuthModal: React.FC<OperatorAuthModalProps> = ({
     </div>
   );
 };
+

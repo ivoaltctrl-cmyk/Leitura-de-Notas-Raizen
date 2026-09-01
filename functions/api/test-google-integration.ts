@@ -4,8 +4,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     const targetUrl =
       body?.webhookUrl?.trim() ||
       context.env?.GOOGLE_APPS_SCRIPT_URL ||
-      context.env?.VITE_GOOGLE_APPS_SCRIPT_URL ||
-      'https://script.google.com/macros/s/AKfycbxjvAIKgEW0fVFRNL3x60Uyb7IVOnZ9Hxlik3BYrMu7IiE2lhykrDyKD0DYfkxwEW014w/exec';
+      '';
 
     if (!targetUrl) {
       return new Response(
