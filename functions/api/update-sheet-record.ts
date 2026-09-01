@@ -6,7 +6,6 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
   const responseHeaders = {
     'Content-Type': 'application/json;charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
   };
 
   const auth = authenticateRequest(context.request, context.env);
@@ -16,8 +15,7 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
 
   try {
     const body = (await context.request.json().catch(() => ({}))) as any;
-    const { webhookUrl, secretToken, dataInicio, dataFim, produto, valorLitro } = body || {};
-
+    const { webhookUrl, secretToken, record, oldNumero } = body || {};
     const targetUrl =
       webhookUrl?.trim() ||
       context.env?.GOOGLE_APPS_SCRIPT_URL ||
@@ -25,45 +23,51 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
 
     if (!targetUrl) {
       return new Response(
-        JSON.stringify({ sucesso: false, mensagem: 'URL do Google Apps Script não informada.' }),
+        JSON.stringify({
+          sucesso: false,
+          mensagem: 'URL do Google Apps Script não informada.',
+        }),
         { status: 400, headers: responseHeaders }
       );
     }
 
-    const valorLitroNum =
-      typeof valorLitro === 'number' ? valorLitro : parseFloat(String(valorLitro || 0).replace(',', '.'));
-
-    if (isNaN(valorLitroNum) || valorLitroNum < 0) {
+    if (!record) {
       return new Response(
-        JSON.stringify({ sucesso: false, mensagem: 'Valor do litro inválido.' }),
+        JSON.stringify({
+          sucesso: false,
+          mensagem: 'Dados do lançamento para atualização não informados.',
+        }),
         { status: 400, headers: responseHeaders }
       );
     }
 
     const effectiveToken = (secretToken || context.env?.GOOGLE_APPS_SCRIPT_TOKEN || '').trim();
     const payload: any = {
-      action: 'update_fuel_prices',
-      dataInicio: dataInicio || '',
-      dataFim: dataFim || dataInicio || '',
-      produto: produto || 'TODOS',
-      valorLitro: valorLitroNum,
+      action: 'update_row',
+      oldNumero: oldNumero || record.numeroOriginal || record.numero,
+      ...record,
       timestamp: new Date().toISOString(),
     };
+
     if (effectiveToken) {
       payload.token = effectiveToken;
     }
 
     const separator = targetUrl.includes('?') ? '&' : '?';
-    const targetUrlWithToken = effectiveToken
-      ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}`
-      : targetUrl;
+    const targetUrlWithToken = effectiveToken ? `${targetUrl}${separator}token=${encodeURIComponent(effectiveToken)}` : targetUrl;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
     const gasResponse = await fetch(targetUrlWithToken, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(payload),
       redirect: 'follow',
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     const responseText = await gasResponse.text();
     let responseData: any;
@@ -78,18 +82,17 @@ export const onRequestPost = async (context: { request: Request; env: Record<str
     return new Response(
       JSON.stringify({
         sucesso: isSuccess,
-        mensagem:
-          responseData?.mensagem ||
-          (isSuccess ? 'Valores atualizados na planilha com sucesso!' : 'Falha ao atualizar valores na planilha.'),
-        totalAtualizados: responseData?.totalAtualizados,
-        totalVolume: responseData?.totalVolume,
-        totalFinanceiro: responseData?.totalFinanceiro,
+        mensagem: responseData?.mensagem || (isSuccess ? 'Lançamento atualizado na planilha com sucesso!' : 'Falha ao atualizar lançamento.'),
+        data: responseData,
       }),
-      { headers: responseHeaders }
+      { status: 200, headers: responseHeaders }
     );
-  } catch (err: any) {
+  } catch (error: any) {
     return new Response(
-      JSON.stringify({ sucesso: false, mensagem: `Erro ao atualizar valores: ${err.message || 'Falha de comunicação'}` }),
+      JSON.stringify({
+        sucesso: false,
+        mensagem: `Erro ao atualizar lançamento: ${error.message || 'Falha de comunicação'}`,
+      }),
       { status: 500, headers: responseHeaders }
     );
   }
